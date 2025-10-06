@@ -6,6 +6,9 @@ on:
       KERNEL_SOURCE_URL:
         description: 'Samsung Kernel Source URL (.zip)'
         required: true
+      TOOLCHAIN_URL:
+        description: 'AOSP Clang Toolchain URL (.tar.gz)'
+        required: true
       STOCK_BOOT_IMG_URL:
         description: 'Stock boot.img URL (Used for Ramdisk)'
         required: true
@@ -48,11 +51,8 @@ jobs:
 
       - name: Setup Toolchain
         run: |
-          # Use a standard, reliable toolchain
-          curl -LO "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r498229b.tar.gz"
           mkdir -p toolchain
-          tar -xzf clang-r498229b.tar.gz -C toolchain
-          rm clang-r498229b.tar.gz
+          curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
           echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
