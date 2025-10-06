@@ -34,29 +34,26 @@ jobs:
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Download and Extract Kernel Source
+      - name: Download and Extract Kernel Source (Correct Method)
         id: workspace
         run: |
+          # Following user's exact description. No more assumptions.
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
+          
           KERNEL_ARCHIVE=$(find . -maxdepth 1 -name "*.tar.gz" -o -name "*.tar" | head -n 1)
           if [ -z "$KERNEL_ARCHIVE" ]; then
             echo "Error: Could not find Kernel.tar.gz or similar archive inside the zip."
             exit 1
           fi
+          
+          # This extracts the 'kernel' and 'kernel-5.10' directories directly.
           tar -xf "$KERNEL_ARCHIVE"
           
-          # THE ABSOLUTE FINAL CRITICAL FIX:
-          # The source zip creates TWO folders: 'Kernel' and 'kernel'.
-          # 'Kernel' contains the actual kernel source (5.10).
-          # 'kernel' contains the build scripts.
-          # We need to rename 'Kernel' to 'kernel-5.10' for the patching steps.
-          # The 'kernel' folder is already there for the build step.
-          if [ -d "Kernel" ]; then
-            mv Kernel kernel-5.10
-            echo "Renamed 'Kernel' to 'kernel-5.10' for patching."
-          else
-            echo "Error: The main 'Kernel' source directory was not found."
+          # Verify that the required directories exist.
+          if [ ! -d "kernel-5.10" ] || [ ! -d "kernel" ]; then
+            echo "Error: The expected 'kernel-5.10' and 'kernel' directories were not found after extraction."
+            ls -la
             exit 1
           fi
 
@@ -76,7 +73,7 @@ jobs:
       - name: Configure, Patch, and Integrate
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          # All commands now run inside the correctly named kernel-5.10 directory.
+          # All commands run inside kernel-5.10, which now exists.
           
           echo "Modifying configs and applying patches..."
           CONFIG_SCRIPT="scripts/config"
@@ -112,7 +109,7 @@ jobs:
           export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
           export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # The 'kernel' directory (lowercase) is now available from the original extraction.
+          # The 'kernel' directory (lowercase) exists from the extraction.
           cd kernel
           ./build/build.sh
 
