@@ -23,10 +23,14 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
+      - name: Maximize Build Space (Fast Method)
+        uses: easimon/maximize-build-space@master
         with:
-          swap-size-gb: 16
+          root-reserve-mb: 512
+          swap-size-mb: 16384
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
 
       - name: Install Build Dependencies
         run: |
