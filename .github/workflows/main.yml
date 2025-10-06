@@ -56,45 +56,41 @@ jobs:
           echo "PATH=${{ steps.workspace.outputs.work_dir }}/toolchain/bin:$PATH" >> $GITHUB_ENV
 
       - name: Configure, Patch, and Integrate KernelSU
-        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' drivers/power/reset/reboot-mode.c
+          # All commands run from the root directory now
+          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' kernel-5.10/drivers/power/reset/reboot-mode.c
           echo "Recovery boot patch applied."
 
-          chmod +x scripts/config
-          DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
-          ./scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
-          ./scripts/config --file $DEFCONFIG_FILE --set-val KSU y
+          chmod +x kernel-5.10/scripts/config
+          DEFCONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
+          ./kernel-5.10/scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
+          ./kernel-5.10/scripts/config --file $DEFCONFIG_FILE --set-val KSU y
           
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
 
           echo "Setting up KernelSU (Base)..."
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          # We need to be in the kernel-5.10 directory for setup.sh to work correctly
+          (cd kernel-5.10 && curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -)
 
       - name: Build The Kernel
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          # Generate the main build config
+          # Generate the main build config (from root)
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Set build environment variables using RELATIVE paths
+          # Set build environment variables (from root)
           export PLATFORM_VERSION=12
-          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # *** FIX 1: Tell the build script to skip 'make mrproper' ***
+          # Tell the build script to skip 'make mrproper'
           export SKIP_MRPROPER=1
           
-          # *** FIX 2: Patch the main build script to disable GKI checks ***
-          BUILD_SCRIPT_PATH="kernel/build/build.sh"
-          sed -i 's/source "${ROOT_DIR}\/build\/_setup_env.sh"/#source "${ROOT_DIR}\/build\/_setup_env.sh"/' "$BUILD_SCRIPT_PATH"
-          sed -i 's/source "${ROOT_DIR}\/build\/_build_gki.sh"/#source "${ROOT_DIR}\/build\/_build_gki.sh"/' "$BUILD_SCRIPT_PATH"
-          
-          # Run the build script
-          cd kernel
-          ./build/build.sh
+          # Run the build script from the ROOT directory
+          ./kernel/build/build.sh
 
       - name: Repack Boot Image and Upload
         working-directory: ${{ steps.workspace.outputs.work_dir }}
