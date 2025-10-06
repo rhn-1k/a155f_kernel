@@ -75,13 +75,14 @@ jobs:
           echo "--- Generating build.config from the correct directory ---"
           python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
 
-      - name: Build The Kernel (The Final, Corrected Method)
+      - name: Build The Kernel (The Final, Corrected Path)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           echo "--- Starting The Main Build ---"
           
-          # *** THE ULTIMATE, FINAL, TRUE FIX: Patch the build script to preserve the PATH ***
-          sed -i 's|export PATH=${TOOLCHAIN_PATH}/bin$|export PATH=${TOOLCHAIN_PATH}/bin:${PATH}|' kernel/build/build.sh
+          # *** THE ULTIMATE, FINAL, TRUE FIX: Patch the build script at the CORRECT path ***
+          BUILD_SCRIPT_PATH="kernel/build/build.sh"
+          sed -i 's|export PATH=${TOOLCHAIN_PATH}/bin$|export PATH=${TOOLCHAIN_PATH}/bin:${PATH}|' $BUILD_SCRIPT_PATH
           
           export PLATFORM_VERSION=12
           export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
@@ -89,8 +90,8 @@ jobs:
           export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
           export MERGE_CONFIG="kernel-5.10/scripts/kconfig/merge_config.sh"
           
-          # Run the patched script from the root
-          ./kernel/build.sh
+          # Run the patched script from the root, using its CORRECT full path
+          ./$BUILD_SCRIPT_PATH
 
       - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
