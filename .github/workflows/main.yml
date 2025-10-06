@@ -1,4 +1,4 @@
-name: Build GKI Kernel with Recovery Patch
+name: Build GKI Kernel with KernelSU-Next and Recovery Patch
 
 on:
   workflow_dispatch:
@@ -34,6 +34,16 @@ jobs:
           TOP_LEVEL_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
           echo "work_dir=$(realpath $TOP_LEVEL_DIR)" >> $GITHUB_OUTPUT
 
+      - name: Integrate KernelSU-Next
+        # CRITICAL FIX: Run this from the correct directory that contains 'kernel-5.10'
+        working-directory: ${{ steps.source.outputs.work_dir }}
+        run: |
+          echo "Integrating KernelSU-Next into the kernel source..."
+          # We pass the sub-directory 'kernel-5.10' to the script
+          # so it knows where the actual kernel source is.
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -s -- -C kernel-5.10
+          echo "KernelSU-Next integrated successfully."
+
       - name: Apply Patches and Personalize
         working-directory: ${{ steps.source.outputs.work_dir }}
         run: |
@@ -42,6 +52,7 @@ jobs:
           sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$TARGET_FILE"
           echo "Recovery patch applied successfully."
 
+          echo "Personalizing build script with your name..."
           sed -i 's/-ravindu644-/-${{ github.event.inputs.YOUR_NAME }}-/g' build.sh
           echo "Build script personalized."
 
