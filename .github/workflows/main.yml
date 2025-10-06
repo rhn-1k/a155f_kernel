@@ -1,0 +1,66 @@
+name: Sync Upstream Repo with Submodules
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repo:
+        description: 'The repository to copy from (e.g., user/repo)'
+        required: true
+        default: 'nillerusr/source-engine'
+      pat:
+        description: 'A Personal Access Token (PAT) with "repo" and "workflow" scopes'
+        required: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout upstream repository with submodules
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.upstream_repo }}
+          submodules: 'recursive' # <-- الخطوة 1: سحب الوحدات النمطية
+          path: 'upstream'
+          # لا نحتاج token هنا لأن المستودع المصدر غالباً عام
+
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+        with:
+          path: 'mine'
+          token: ${{ github.event.inputs.pat }} # <-- يستخدم لسحب مستودعك
+
+      - name: Sync files and handle submodules
+        run: |
+          # الخطوة 2: نسخ كل شيء ما عدا مجلد .git
+          rsync -av --delete upstream/ mine/ --exclude '.git/'
+
+          # الخطوة 3: التعامل مع الوحدات النمطية
+          cd mine
+          # إذا كان ملف .gitmodules موجودًا بعد النسخ، قم بمزامنة الوحدات النمطية
+          if [ -f ".gitmodules" ]; then
+            echo "Submodules file found. Syncing submodules..."
+            git submodule sync --recursive
+            git submodule update --init --recursive
+          else
+            echo "No submodules file found."
+          fi
+
+      - name: Commit and push changes
+        run: |
+          cd mine
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions-bot@github.com"
+          
+          # إضافة كل التغييرات بما في ذلك ملف .gitmodules وأي تغييرات في الوحدات النمطية
+          git add .
+
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "Sync with upstream ${{ github.event.inputs.upstream_repo }}"
+            # الخطوة 4: الدفع إلى الفرع الرئيسي لمستودعك
+            git push origin HEAD:${{ github.event.repository.default_branch }}
+          else
+            echo "No changes to sync. Your repository is up-to-date."
+          fi
+        env:
+          # استخدام الـ PAT للدفع
+          GIT_PAT: ${{ github.event.inputs.pat }}
