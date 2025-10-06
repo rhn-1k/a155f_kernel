@@ -23,9 +23,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Maximize Build Space
-        uses: rokibhasansagar/slimhub_actions@main
-        
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -48,6 +45,16 @@ jobs:
             exit 1
           fi
           tar -xf "$KERNEL_ARCHIVE"
+          
+          # THE CRITICAL FIX: Rename the extracted 'Kernel' folder to 'kernel-5.10'
+          if [ -d "Kernel" ]; then
+            mv Kernel kernel-5.10
+            echo "Renamed 'Kernel' to 'kernel-5.10'"
+          else
+            echo "Error: The extracted 'Kernel' directory was not found."
+            exit 1
+          fi
+
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
       - name: Setup Toolchain
@@ -64,33 +71,26 @@ jobs:
       - name: Configure, Patch, and Integrate
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          # All commands now run inside kernel-5.10, fixing the path error.
+          # All commands now run inside the correctly named kernel-5.10 directory.
           
-          # 1. Modify configs and apply our custom patch
           echo "Modifying configs and applying patches..."
           CONFIG_SCRIPT="scripts/config"
           DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
           chmod +x $CONFIG_SCRIPT
           
-          # Recovery boot patch
           RECOVERY_PATCH_TARGET="drivers/power/reset/reboot-mode.c"
           if [ -f "$RECOVERY_PATCH_TARGET" ]; then
             sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$RECOVERY_PATCH_TARGET"
             echo "Recovery boot patch applied."
           fi
           
-          # Disable Samsung Protections
           ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
-          
-          # Enable KernelSU and SuSFS
           ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val KSU y
           ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val SUSFS y
 
-          # Add custom version
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
 
-          # 2. Integrate KernelSU and SuSFS
           echo "Setting up KernelSU and SuSFS..."
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -
           git clone https://github.com/KernelSU-Next/SuSFS.git --depth=1 susfs
@@ -100,7 +100,6 @@ jobs:
       - name: Build The Kernel (Samsung Official Method for A15)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          # This part remains the same as it was correct
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
           export PLATFORM_VERSION=12
@@ -108,6 +107,14 @@ jobs:
           export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
           export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
+          # The 'kernel' directory for build.sh is created by the zip extraction, but we renamed its parent.
+          # We need to be in the root to call `kernel/build.sh`
+          # Let's check if the 'kernel' directory exists from the original zip.
+          if [ ! -d "kernel" ]; then
+             echo "Error: The 'kernel' directory for the build script was not found."
+             ls -la
+             exit 1
+          fi
           cd kernel
           ./build/build.sh
 
