@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The True, Simple Method
+name: Build A15 Kernel - The Official Script Method
 
 on:
   workflow_dispatch:
@@ -69,24 +69,12 @@ jobs:
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Generate Build Config
-        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
-        run: |
-          echo "--- Generating build.config from the correct directory ---"
-          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
-
-      - name: Build The Kernel (The Final, Corrected Path)
+      - name: Build The Kernel (Using The Official build_kernel.sh)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Starting The Main Build ---"
-          export PLATFORM_VERSION=12
-          export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
-          export MERGE_CONFIG="kernel-5.10/scripts/kconfig/merge_config.sh"
-          
-          # Run the script from the root, using its full path
-          ./kernel/build.sh
+          echo "--- Starting The Main Build using the official script ---"
+          chmod +x build_kernel.sh
+          ./build_kernel.sh
 
       - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
