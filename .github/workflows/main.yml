@@ -1,13 +1,10 @@
-name: Build KernelSU-Next Kernel (LKM)
+name: Build GKI Kernel with Recovery Patch
 
 on:
   workflow_dispatch:
     inputs:
       KERNEL_SOURCE_URL:
-        description: 'Direct URL to your original kernel source (.tar.gz, .zip)'
-        required: true
-      TOOLCHAIN_URL:
-        description: 'Direct URL to your toolchain archive (.tar.gz)'
+        description: 'Direct URL to your kernel source (.zip)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -16,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: Build and Package Kernel
+    name: Build and Package GKI Kernel
     runs-on: ubuntu-22.04
 
     steps:
@@ -28,94 +25,47 @@ jobs:
         with:
           swap-size-gb: 16
 
-      - name: Install Build Dependencies
+      - name: Download and Unpack Kernel Source
+        id: source
         run: |
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository -y ppa:deadsnakes/ppa
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2.7
-          sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
-
-      - name: Download and Prepare Workspace
-        id: workspace
-        run: |
+          sudo apt-get update && sudo apt-get install -y unzip git
           curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q kernel_source.zip
-          rm kernel_source.zip
-          
           TOP_LEVEL_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
           echo "work_dir=$(realpath $TOP_LEVEL_DIR)" >> $GITHUB_OUTPUT
 
-      - name: Setup Toolchain
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
+      - name: Apply Patches and Personalize
+        working-directory: ${{ steps.source.outputs.work_dir }}
         run: |
-          mkdir -p prebuilts
-          cd prebuilts
-          curl -L -o toolchain.tar.gz "${{ github.event.inputs.TOOLCHAIN_URL }}"
-          tar -xf toolchain.tar.gz
-          rm toolchain.tar.gz
+          echo "Applying SAFE patch to enable booting to recovery without PC..."
+          TARGET_FILE="kernel-5.10/drivers/power/reset/reboot-mode.c"
+          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$TARGET_FILE"
+          echo "Recovery patch applied successfully."
 
-      - name: Setup Kernel Build Environment
-        run: |
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "PLATFORM_VERSION=12" >> $GITHUB_ENV
-          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
-          echo "LTO=thin" >> $GITHUB_ENV
-          echo "KBUILD_BUILD_USER=${{ github.event.inputs.YOUR_NAME }}" >> $GITHUB_ENV
-          echo "KBUILD_BUILD_HOST=GitHub-Actions" >> $GITHUB_ENV
+          sed -i 's/-ravindu644-/-${{ github.event.inputs.YOUR_NAME }}-/g' build.sh
+          echo "Build script personalized."
 
-      - name: Personalize and Build Kernel
-        # --- CRITICAL CHANGE: WORK DIRECTLY INSIDE THE KERNEL SOURCE FOLDER ---
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
+      - name: Run The Main Build Script
+        working-directory: ${{ steps.source.outputs.work_dir }}
         run: |
-          # Define paths relative to our current location
-          DEFCONFIG_PATH="kernel-5.10/arch/arm64/configs/a16_00_defconfig"
-          CONFIG_SCRIPT_PATH="kernel-5.10/scripts/config"
+          bash build.sh
+
+      - name: Upload Final Odin Package to Gofile
+        working-directory: ${{ steps.source.outputs.work_dir }}
+        run: |
+          FINAL_TAR=$(find dist -name "*.tar" | head -n 1)
+          if [ -z "$FINAL_TAR" ]; then
+            echo "Error: Final .tar file not found in dist folder! Build may have failed."
+            exit 1
+          fi
           
-          # Personalize
-          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}-LKM\"" >> $DEFCONFIG_PATH
-          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
-          
-          # Attack KNOX
-          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH \
-          --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n \
-          --set-val UH n --set-val PROCA n --set-val FIVE n --set-val GAF_V6 n \
-          --set-val UH_RKP n --set-val UH_LKMAUTH n --set-val UH_LKM_BLOCK n \
-          --set-val RKP_CFP_JOPP n --set-val RKP_CFP n --set-val KDP_CRED n \
-          --set-val KDP_NS n --set-val KDP_TEST n --set-val RKP_CRED n
-
-          # Configure LKM
-          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val KSU m --set-val MODULES y --set-val MODULE_UNLOAD y
-          
-          # --- Build Step ---
-          export BUILD_CONFIG="out/build.config"
-          python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
-          kernel/build/build.sh
-
-      - name: Create Flashable ZIP using AnyKernel3
-        id: zip_package
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
-          DIST_DIR=$(find out -type d -name "dist" | head -n 1)
-          if [ -z "$DIST_DIR" ]; then echo "Error: 'dist' directory not found!"; exit 1; fi
-          cp $DIST_DIR/Image.gz anykernel/
-          KSU_MODULE=$(find $DIST_DIR -name "ksu.ko")
-          if [ -f "$KSU_MODULE" ]; then cp $KSU_MODULE anykernel/; fi
-          cd anykernel
-          ZIP_NAME="${{ github.event.inputs.YOUR_NAME }}-Kernel-LKM-${{ github.run_id }}.zip"
-          zip -r9 ../$ZIP_NAME * -x .git README.md *placeholder
-          echo "zip_path=$(realpath ../$ZIP_NAME)" >> $GITHUB_OUTPUT
-
-      - name: Upload to Gofile
-        run: |
-          FILE_PATH="${{ steps.zip_package.outputs.zip_path }}"
-          RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
+          RESPONSE=$(curl -F "file=@${FINAL_TAR}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
-          if [ -z "$DOWNLOAD_PAGE" ]; then echo "Error: Could not extract download page URL!"; exit 1; fi
+          if [ -z "$DOWNLOAD_PAGE" ]; then
+            echo "Error: Could not extract download page URL from Gofile response."
+            exit 1
+          fi
+          
           echo "----------------------------------------------------------------"
-          echo "Build successful. Download link: $DOWNLOAD_PAGE"
+          echo "Build successful. Download your Odin-flashable kernel here: $DOWNLOAD_PAGE"
           echo "----------------------------------------------------------------"
