@@ -1,0 +1,107 @@
+name: Build Your Kernel (LKM)
+
+on:
+  workflow_dispatch:
+    inputs:
+      KERNEL_SOURCE_URL:
+        description: 'Direct URL to your kernel source (.tar.gz, .zip)'
+        required: true
+      TOOLCHAIN_URL:
+        description: 'Direct URL to your toolchain archive (.tar.gz)'
+        required: true
+
+jobs:
+  build:
+    name: Build and Package Your Kernel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Maximize Build Space
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 16
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
+
+      - name: Setup Workspace
+        id: setup
+        run: |
+          mkdir -p /home/runner/workspace/prebuilts
+          echo "workspace_path=/home/runner/workspace" >> $GITHUB_OUTPUT
+
+      - name: Download and Setup Toolchain
+        working-directory: ${{ steps.setup.outputs.workspace_path }}/prebuilts
+        run: |
+          echo "Downloading toolchain from ${{ github.event.inputs.TOOLCHAIN_URL }}"
+          curl -L -o toolchain.tar.gz "${{ github.event.inputs.TOOLCHAIN_URL }}"
+          echo "Extracting toolchain..."
+          tar -xf toolchain.tar.gz
+
+      - name: Setup Kernel Build Environment
+        run: |
+          echo "ARCH=arm64" >> $GITHUB_ENV
+          echo "PLATFORM_VERSION=12" >> $GITHUB_ENV
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
+          echo "LTO=thin" >> $GITHUB_ENV
+
+      - name: Download and Prepare Kernel Source
+        id: kernel_source
+        working-directory: ${{ steps.setup.outputs.workspace_path }}
+        run: |
+          curl -L -o kernel_source.tar.gz "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
+          tar -xf kernel_source.tar.gz
+          KERNEL_DIR=$(dirname $(find . -maxdepth 3 -type f -name "Kconfig" -print -quit))
+          echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
+          DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/a15_00_defconfig"
+          # Apply critical defconfig modifications
+          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
+          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_CUBIC n
+          # Enable KSU as a module (LKM)
+          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val KSU m
+          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val MODULES y
+          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val MODULE_UNLOAD y
+
+      - name: Build The Kernel
+        working-directory: ${{ steps.setup.outputs.workspace_path }}
+        run: |
+          export BUILD_CONFIG="out/build.config"
+          python2 ${{ steps.kernel_source.outputs.kernel_path }}/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig -m user -o $BUILD_CONFIG
+          ${{ steps.kernel_source.outputs.kernel_path }}/build/build.sh
+
+      - name: Create Flashable ZIP using AnyKernel3
+        id: zip_package
+        working-directory: ${{ steps.setup.outputs.workspace_path }}
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
+          cp out/dist/Image.gz anykernel/
+          # Find and copy the KernelSU module
+          KSU_MODULE=$(find out/dist -name "ksu.ko")
+          if [ -f "$KSU_MODULE" ]; then
+            cp $KSU_MODULE anykernel/
+          fi
+          cd anykernel
+          ZIP_NAME="Your-Kernel-LKM-${{ github.run_id }}.zip"
+          zip -r9 ../$ZIP_NAME * -x .git README.md *placeholder
+          echo "zip_path=$(realpath ../$ZIP_NAME)" >> $GITHUB_OUTPUT
+
+      - name: Upload to Gofile
+        run: |
+          FILE_PATH="${{ steps.zip_package.outputs.zip_path }}"
+          RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
+          DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
+          if [ -z "$DOWNLOAD_PAGE" ]; then
+            echo "Error: Could not extract download page URL from Gofile response."
+            exit 1
+          fi
+          echo "----------------------------------------------------------------"
+          echo "File uploaded successfully!"
+          echo "Your LKM Kernel is ready: $DOWNLOAD_PAGE"
+          echo "----------------------------------------------------------------"
