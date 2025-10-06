@@ -1,23 +1,26 @@
-name: Build GKI Kernel with KernelSU-Next and Recovery Patch
+name: Build A15 Kernel (Samsung Official Method)
 
 on:
   workflow_dispatch:
     inputs:
       KERNEL_SOURCE_URL:
-        description: 'Direct URL to your kernel source (.zip)'
+        description: 'Direct URL to your RAW Samsung kernel source (.zip)'
+        required: true
+      TOOLCHAIN_URL:
+        description: 'Direct URL to your AOSP Clang toolchain (.tar.gz)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
         required: true
-        default: 'rhn_1k'
+        default: 'YourName'
 
 jobs:
   build:
-    name: Build and Package GKI Kernel
+    name: Build and Package Kernel
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Maximize Build Space by Cleaning Runner
+      - name: Maximize Build Space
         uses: rokibhasansagar/slimhub_actions@main
         
       - name: Set Swap Space
@@ -25,58 +28,88 @@ jobs:
         with:
           swap-size-gb: 16
 
-      - name: Download and Unpack Kernel Source
-        id: source
+      - name: Install Build Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y unzip git
-          curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
-          unzip -q kernel_source.zip
-          TOP_LEVEL_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
-          echo "work_dir=$(realpath $TOP_LEVEL_DIR)" >> $GITHUB_OUTPUT
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Integrate KernelSU-Next
-        # CRITICAL FIX: Run this from the correct directory that contains 'kernel-5.10'
-        working-directory: ${{ steps.source.outputs.work_dir }}
+      - name: Download and Prepare Workspace
+        id: workspace
         run: |
-          echo "Integrating KernelSU-Next into the kernel source..."
-          # We pass the sub-directory 'kernel-5.10' to the script
-          # so it knows where the actual kernel source is.
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -s -- -C kernel-5.10
-          echo "KernelSU-Next integrated successfully."
+          curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
+          unzip -q source.zip
+          KERNEL_ARCHIVE=$(find . -maxdepth 1 -name "*.tar.gz" -o -name "*.tar" | head -n 1)
+          if [ -n "$KERNEL_ARCHIVE" ]; then
+            tar -xf "$KERNEL_ARCHIVE"
+          fi
+          echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
-      - name: Apply Patches and Personalize
-        working-directory: ${{ steps.source.outputs.work_dir }}
+      - name: Setup Toolchain
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "Applying SAFE patch to enable booting to recovery without PC..."
-          TARGET_FILE="kernel-5.10/drivers/power/reset/reboot-mode.c"
-          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$TARGET_FILE"
-          echo "Recovery patch applied successfully."
+          mkdir -p toolchain
+          curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
-          echo "Personalizing build script with your name..."
-          sed -i 's/-ravindu644-/-${{ github.event.inputs.YOUR_NAME }}-/g' build.sh
-          echo "Build script personalized."
-
-      - name: Run The Main Build Script
-        working-directory: ${{ steps.source.outputs.work_dir }}
+      - name: Integrate KernelSU and SuSFS
+        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          bash build.sh
-
-      - name: Upload Final Odin Package to Gofile
-        working-directory: ${{ steps.source.outputs.work_dir }}
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -
+          git clone https://github.com/KernelSU-Next/SuSFS.git --depth=1 susfs
+          git apply --directory="susfs" --no-index susfs/ksu.patch
+          rm -rf susfs
+          
+      - name: Apply Patches and Configure
+        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          FINAL_TAR=$(find dist -name "*.tar" | head -n 1)
-          if [ -z "$FINAL_TAR" ]; then
-            echo "Error: Final .tar file not found in dist folder! Build may have failed."
-            exit 1
+          DEFCONFIG_PATH="arch/arm64/configs/a15_00_defconfig"
+          
+          TARGET_FILE="drivers/power/reset/reboot-mode.c"
+          if [ -f "$TARGET_FILE" ]; then
+            sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$TARGET_FILE"
           fi
           
-          RESPONSE=$(curl -F "file=@${FINAL_TAR}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
+          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_PATH
+          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
+          echo "CONFIG_KSU=y" >> $DEFCONFIG_PATH
+          echo "CONFIG_SUSFS=y" >> $DEFCONFIG_PATH
+
+      - name: Build The Kernel (Samsung Official Method for A15)
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
+        run: |
+          python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
+          
+          export PLATFORM_VERSION=12
+          export OUT_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          
+          cd kernel
+          ./build/build.sh
+
+      - name: Package for Odin and Upload to Gofile
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
+        run: |
+          mkdir -p dist
+          cp out/target/product/a15/obj/KERNEL_OBJ/boot.img dist/boot.img
+          cd dist
+          tar -cvf "Kernel-A15-${{ github.event.inputs.YOUR_NAME }}.tar" boot.img
+          
+          FILE_PATH=$(realpath "Kernel-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
+          RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
-          if [ -z "$DOWNLOAD_PAGE" ]; then
-            echo "Error: Could not extract download page URL from Gofile response."
+          
+          if [ -z "$DOWNLOAD_PAGE" ]; then 
+            echo "Error: Could not extract download page URL! Response was:"
+            echo $RESPONSE
             exit 1
           fi
           
           echo "----------------------------------------------------------------"
-          echo "Build successful. Download your Odin-flashable kernel here: $DOWNLOAD_PAGE"
+          echo "Build successful. Download your flashable Odin tar here: $DOWNLOAD_PAGE"
           echo "----------------------------------------------------------------"
