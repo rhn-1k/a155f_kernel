@@ -1,118 +1,46 @@
-name: Build A15 Kernel - The Simple, True Method
+name: Sync Repo using PAT
 
 on:
   workflow_dispatch:
     inputs:
-      KERNEL_SOURCE_URL:
-        description: 'Samsung Kernel Source URL (.zip)'
+      upstream_repo:
+        description: 'The repository to copy from (e.g., rhn/twrp-tree) without github.com'
         required: true
-      TOOLCHAIN_URL:
-        description: 'AOSP Clang Toolchain URL (.tar.gz)'
+        default: 'nillerusr/source-engine'
+      pat:
+        description: 'A Personal Access Token (PAT) with full "repo" scope'
         required: true
-      STOCK_BOOT_IMG_URL:
-        description: 'Stock boot.img URL (Used for repacking)'
-        required: true
-      YOUR_NAME:
-        description: 'Your developer name (no spaces)'
-        required: true
-        default: 'rhn_1k'
 
 jobs:
-  build:
-    name: Build and Package Kernel
-    runs-on: ubuntu-22.04
-
+  sync:
+    runs-on: ubuntu-latest
     steps:
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
-          sudo ln -sf /usr/bin/python2 /usr/bin/python
+      - name: Clone the upstream repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.upstream_repo }}
+          path: 'upstream'
 
-      - name: Download and Prepare Workspace
-        id: workspace
-        run: |
-          echo "--- Preparing Workspace ---"
-          curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
-          unzip -q source.zip
-          tar -xf Kernel.tar.gz
-          
-          mkdir -p tools
-          curl -L -o tools/magiskboot "https://github.com/poqdavid/android_kernel_samsung_sma155f/raw/refs/heads/kernelsu/scripts/bin/magiskboot"
-          chmod +x tools/magiskboot
-          
-          curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
-          
-          echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+        with:
+          path: 'mine'
+          token: ${{ github.event.inputs.pat }}
 
-      - name: Setup Toolchain
+      - name: Copy all files from upstream to your repo
         run: |
-          echo "--- Setting up Toolchain ---"
-          mkdir -p toolchain
-          curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
-          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
-          echo "CC=clang" >> $GITHUB_ENV
-          echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
+          rsync -av --delete upstream/ mine/ --exclude '.git/'
 
-      - name: Configure, Patch, and Integrate
-        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
+      - name: Commit and push changes
         run: |
-          echo "--- Patching and Configuring Kernel ---"
-          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' drivers/power/reset/reboot-mode.c
-          chmod +x scripts/config
-          DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
-          ./scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
-          ./scripts/config --file $DEFCONFIG_FILE --set-val KSU y
-          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
-          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
-      - name: Build The Kernel (The Official Samsung Script Method)
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
-        run: |
-          echo "--- Starting The Main Build (The Official Samsung Script Method) ---"
-          
-          # This block IS the official build_kernel.sh script, implemented correctly.
-          
-          # 1. cd kernel-5.10
-          cd kernel-5.10
-          
-          # 2. python scripts/gen_build_config.py ...
-          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
-          
-          # 3. export variables
-          export PLATFORM_VERSION=12
-          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
-          
-          # 4. cd ../kernel
-          cd ../kernel
-          
-          # 5. ./build/build.sh
-          ./build/build.sh
-
-      - name: Repack and Upload Final Artifact
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
-        run: |
-          echo "--- Repacking Final Image ---"
-          ./tools/magiskboot unpack stock_boot.img
-          cp out/target/product/a15/obj/KERNEL_OBJ/kernel-5.10/arch/arm64/boot/Image.gz kernel
-          ./tools/magiskboot repack stock_boot.img new_boot.img
-          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" new_boot.img
-          
-          FILE_PATH=$(realpath "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
-          RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
-          DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
-          
-          if [ -z "$DOWNLOAD_PAGE" ]; then 
-            echo "Error: Could not get Gofile URL! Response was:"
-            echo $RESPONSE
-            exit 1
+          cd mine
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions-bot@github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "Sync with upstream repository ${{ github.event.inputs.upstream_repo }}"
+            git push https://x-access-token:${{ github.event.inputs.pat }}@github.com/${{ github.repository }}.git HEAD:main
+            echo "Changes have been synced and pushed to your repository."
+          else
+            echo "No changes to sync. Your repository is up-to-date."
           fi
-          
-          echo "----------------------------------------------------------------"
-          echo "Build successful. Download your flashable Odin tar here: $DOWNLOAD_PAGE"
-          echo "----------------------------------------------------------------"
