@@ -15,7 +15,7 @@ on:
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
         required: true
-        default: 'YourName'
+        default: 'rhn_1k'
 
 jobs:
   build:
@@ -34,17 +34,22 @@ jobs:
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Download and Extract Kernel Source (FINAL CORRECTED METHOD)
+      - name: Download and Extract Kernel Source (Final Corrected Logic)
         id: workspace
         run: |
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           
-          # THE MISSING COMMAND IS NOW BACK. This extracts Kernel.tar.gz
+          # This extracts 'kernel-5.10' and 'kernel' directories directly, as per user's final instruction.
+          # The 'mv' command is removed as it was incorrect.
           tar -xf Kernel.tar.gz
           
-          # Now, this rename command will work because 'Kernel' exists.
-          mv Kernel kernel-5.10
+          # Verify that the required directories exist.
+          if [ ! -d "kernel-5.10" ] || [ ! -d "kernel" ]; then
+            echo "Error: The expected 'kernel-5.10' and 'kernel' directories were not found after extraction."
+            ls -la
+            exit 1
+          fi
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
@@ -87,17 +92,17 @@ jobs:
           rm -rf susfs
 
       - name: Build The Kernel (Samsung Official Method for A15)
-        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          # This part is now correct because it runs inside kernel-5.10
-          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
+          python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
           export PLATFORM_VERSION=12
-          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # Call the build script from its correct location
+          # The 'kernel' directory now exists from the tar extraction.
+          cd kernel
           ./build/build.sh
 
       - name: Repack Boot Image and Upload to Gofile
