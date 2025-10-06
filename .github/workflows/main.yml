@@ -1,4 +1,4 @@
-name: Build A15 Kernel (poqdavid Exact Method - Corrected)
+name: Build A15 Kernel (poqdavid Exact Method - Final)
 
 on:
   workflow_dispatch:
@@ -40,7 +40,6 @@ jobs:
       - name: Download and Extract Kernel Source
         id: workspace
         run: |
-          # This step now correctly handles the nested archive (zip -> tar.gz -> source)
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           KERNEL_ARCHIVE=$(find . -maxdepth 1 -name "*.tar.gz" -o -name "*.tar" | head -n 1)
@@ -67,11 +66,18 @@ jobs:
         run: |
           # === Start of poqdavid's script logic ===
 
-          # 1. Modify configs
-          echo "Modifying configs..."
+          # 1. Modify configs and apply our custom patch
+          echo "Modifying configs and applying patches..."
           CONFIG_SCRIPT="kernel-5.10/scripts/config"
           DEFCONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
           chmod +x $CONFIG_SCRIPT
+          
+          # THIS IS OUR RECOVERY BOOT PATCH
+          RECOVERY_PATCH_TARGET="kernel-5.10/drivers/power/reset/reboot-mode.c"
+          if [ -f "$RECOVERY_PATCH_TARGET" ]; then
+            sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$RECOVERY_PATCH_TARGET"
+            echo "Recovery boot patch applied."
+          fi
           
           # Disable Samsung Protections
           ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
