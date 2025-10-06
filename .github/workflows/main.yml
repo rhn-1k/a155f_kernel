@@ -1,4 +1,4 @@
-name: Build A15 Kernel (poqdavid Exact Method - Final + SuSFS)
+name: Build A15 Kernel
 
 on:
   workflow_dispatch:
@@ -61,19 +61,19 @@ jobs:
           echo "CC=clang" >> $GITHUB_ENV
           echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
-      - name: Configure, Patch, and Build (Exact poqdavid Script)
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
+      - name: Configure, Patch, and Integrate
+        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          # === Start of poqdavid's script logic ===
-
+          # All commands now run inside kernel-5.10, fixing the path error.
+          
           # 1. Modify configs and apply our custom patch
           echo "Modifying configs and applying patches..."
-          CONFIG_SCRIPT="kernel-5.10/scripts/config"
-          DEFCONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
+          CONFIG_SCRIPT="scripts/config"
+          DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
           chmod +x $CONFIG_SCRIPT
           
           # Recovery boot patch
-          RECOVERY_PATCH_TARGET="kernel-5.10/drivers/power/reset/reboot-mode.c"
+          RECOVERY_PATCH_TARGET="drivers/power/reset/reboot-mode.c"
           if [ -f "$RECOVERY_PATCH_TARGET" ]; then
             sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$RECOVERY_PATCH_TARGET"
             echo "Recovery boot patch applied."
@@ -92,29 +92,24 @@ jobs:
 
           # 2. Integrate KernelSU and SuSFS
           echo "Setting up KernelSU and SuSFS..."
-          cd kernel-5.10
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -
           git clone https://github.com/KernelSU-Next/SuSFS.git --depth=1 susfs
           git apply --directory="susfs" --no-index susfs/ksu.patch
           rm -rf susfs
+
+      - name: Build The Kernel (Samsung Official Method for A15)
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
+        run: |
+          # This part remains the same as it was correct
+          python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # 3. Generate build config
-          echo "Generating build config..."
-          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
-          
-          # 4. Export environment variables and build
-          echo "Building Kernel..."
-          export LTO=thin
-          export ARCH=arm64
           export PLATFORM_VERSION=12
-          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          cd ../kernel
+          cd kernel
           ./build/build.sh
-          
-          # === End of poqdavid's script logic ===
 
       - name: Repack Boot Image and Upload to Gofile
         working-directory: ${{ steps.workspace.outputs.work_dir }}
