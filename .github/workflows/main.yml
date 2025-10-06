@@ -23,6 +23,17 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Quickly Free Up Disk Space
+        run: |
+          echo "Initial free space:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/android
+          sudo rm -rf /usr/local/lib/android
+          echo "Free space after cleaning:"
+          df -h
+
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -34,23 +45,17 @@ jobs:
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Download and Extract Kernel Source (Final Corrected Logic)
+      - name: Download and Extract Kernel Source
         id: workspace
         run: |
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
-          
-          # This extracts 'kernel-5.10' and 'kernel' directories directly, as per user's final instruction.
-          # The 'mv' command is removed as it was incorrect.
           tar -xf Kernel.tar.gz
-          
-          # Verify that the required directories exist.
           if [ ! -d "kernel-5.10" ] || [ ! -d "kernel" ]; then
             echo "Error: The expected 'kernel-5.10' and 'kernel' directories were not found after extraction."
             ls -la
             exit 1
           fi
-          
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
       - name: Setup Toolchain
@@ -101,7 +106,6 @@ jobs:
           export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
           export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # The 'kernel' directory now exists from the tar extraction.
           cd kernel
           ./build/build.sh
 
