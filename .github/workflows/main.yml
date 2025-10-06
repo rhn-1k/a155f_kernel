@@ -70,35 +70,45 @@ jobs:
           curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q kernel_source.zip
           rm kernel_source.zip
-          NESTED_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
-          if [ -d "$NESTED_DIR" ]; then
-            mv $NESTED_DIR/* .
-            rm -rf $NESTED_DIR
-          fi
-          KERNEL_DIR=$(find . -maxdepth 2 -type f -name "build.sh" -printf "%h\n" | xargs dirname)
+          
+          # --- Find the correct paths based on your discovery ---
+          # Find the top-level directory created by the zip file
+          TOP_LEVEL_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
+          if [ -z "$TOP_LEVEL_DIR" ]; then echo "Error: Could not find the unzipped kernel directory!"; exit 1; fi
+          
+          # Define paths relative to the top-level directory
+          KERNEL_DIR="$TOP_LEVEL_DIR/kernel"
+          KERNEL_SOURCE_DIR="$TOP_LEVEL_DIR/kernel-5.10"
+          
           echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
-          KERNEL_SOURCE_DIR=$(find . -maxdepth 2 -type d -name "kernel-5.10")
           echo "kernel_source_path=$(realpath $KERNEL_SOURCE_DIR)" >> $GITHUB_OUTPUT
+          
           DEFCONFIG_PATH="$KERNEL_SOURCE_DIR/arch/arm64/configs/a16_00_defconfig"
-          if [ ! -f "$DEFCONFIG_PATH" ]; then
-            echo "Error: Defconfig file not found!"
-            exit 1
-          fi
+          if [ ! -f "$DEFCONFIG_PATH" ]; then echo "Error: Defconfig file not found at $DEFCONFIG_PATH"; exit 1; fi
+          
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}-LKM\"" >> $DEFCONFIG_PATH
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
           CONFIG_SCRIPT_PATH="$KERNEL_SOURCE_DIR/scripts/config"
-          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
+          
+          # --- Full-Scale Attack on KNOX ---
+          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH \
+          --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n \
+          --set-val UH n --set-val PROCA n --set-val FIVE n --set-val GAF_V6 n \
+          --set-val UH_RKP n --set-val UH_LKMAUTH n --set-val UH_LKM_BLOCK n \
+          --set-val RKP_CFP_JOPP n --set-val RKP_CFP n --set-val KDP_CRED n \
+          --set-val KDP_NS n --set-val KDP_TEST n --set-val RKP_CRED n
+
+          # --- Other Configurations ---
           $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_CUBIC n
-          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val KSU m
-          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val MODULES y
-          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val MODULE_UNLOAD y
+          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val KSU m --set-val MODULES y --set-val MODULE_UNLOAD y
 
       - name: Build The Kernel
         working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
           export BUILD_CONFIG="out/build.config"
           python2 ${{ steps.kernel_source.outputs.kernel_source_path }}/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
-          # --- CORRECTED BUILD SCRIPT PATH ---
+          
+          # --- Use the correct, precise path to the build script ---
           ${{ steps.kernel_source.outputs.kernel_path }}/build/build.sh
 
       - name: Create Flashable ZIP using AnyKernel3
@@ -106,17 +116,11 @@ jobs:
         working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
-          # Find the output directory, it might be nested
           DIST_DIR=$(find out -type d -name "dist" | head -n 1)
-          if [ -z "$DIST_DIR" ]; then
-            echo "Error: 'dist' directory not found in 'out'!"
-            exit 1
-          fi
+          if [ -z "$DIST_DIR" ]; then echo "Error: 'dist' directory not found!"; exit 1; fi
           cp $DIST_DIR/Image.gz anykernel/
           KSU_MODULE=$(find $DIST_DIR -name "ksu.ko")
-          if [ -f "$KSU_MODULE" ]; then
-            cp $KSU_MODULE anykernel/
-          fi
+          if [ -f "$KSU_MODULE" ]; then cp $KSU_MODULE anykernel/; fi
           cd anykernel
           ZIP_NAME="${{ github.event.inputs.YOUR_NAME }}-Kernel-LKM-${{ github.run_id }}.zip"
           zip -r9 ../$ZIP_NAME * -x .git README.md *placeholder
@@ -127,10 +131,7 @@ jobs:
           FILE_PATH="${{ steps.zip_package.outputs.zip_path }}"
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
-          if [ -z "$DOWNLOAD_PAGE" ]; then
-            echo "Error: Could not extract download page URL from Gofile response."
-            exit 1
-          fi
+          if [ -z "$DOWNLOAD_PAGE" ]; then echo "Error: Could not extract download page URL!"; exit 1; fi
           echo "----------------------------------------------------------------"
           echo "Build successful. Download link: $DOWNLOAD_PAGE"
           echo "----------------------------------------------------------------"
