@@ -37,14 +37,18 @@ jobs:
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2.7
           sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
 
-      - name: Setup Workspace
-        id: setup
+      - name: Download and Prepare Workspace
+        id: workspace
         run: |
-          mkdir -p /home/runner/workspace
-          echo "workspace_path=/home/runner/workspace" >> $GITHUB_OUTPUT
+          curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
+          unzip -q kernel_source.zip
+          rm kernel_source.zip
+          
+          TOP_LEVEL_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
+          echo "work_dir=$(realpath $TOP_LEVEL_DIR)" >> $GITHUB_OUTPUT
 
-      - name: Download, Setup, and Clean Toolchain
-        working-directory: ${{ steps.setup.outputs.workspace_path }}
+      - name: Setup Toolchain
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           mkdir -p prebuilts
           cd prebuilts
@@ -63,34 +67,19 @@ jobs:
           echo "KBUILD_BUILD_USER=${{ github.event.inputs.YOUR_NAME }}" >> $GITHUB_ENV
           echo "KBUILD_BUILD_HOST=GitHub-Actions" >> $GITHUB_ENV
 
-      - name: Download, Prepare, and Personalize Kernel Source
-        id: kernel_source
-        working-directory: ${{ steps.setup.outputs.workspace_path }}
+      - name: Personalize and Build Kernel
+        # --- CRITICAL CHANGE: WORK DIRECTLY INSIDE THE KERNEL SOURCE FOLDER ---
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
-          unzip -q kernel_source.zip
-          rm kernel_source.zip
+          # Define paths relative to our current location
+          DEFCONFIG_PATH="kernel-5.10/arch/arm64/configs/a16_00_defconfig"
+          CONFIG_SCRIPT_PATH="kernel-5.10/scripts/config"
           
-          # --- Find the correct paths based on your discovery ---
-          # Find the top-level directory created by the zip file
-          TOP_LEVEL_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
-          if [ -z "$TOP_LEVEL_DIR" ]; then echo "Error: Could not find the unzipped kernel directory!"; exit 1; fi
-          
-          # Define paths relative to the top-level directory
-          KERNEL_DIR="$TOP_LEVEL_DIR/kernel"
-          KERNEL_SOURCE_DIR="$TOP_LEVEL_DIR/kernel-5.10"
-          
-          echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
-          echo "kernel_source_path=$(realpath $KERNEL_SOURCE_DIR)" >> $GITHUB_OUTPUT
-          
-          DEFCONFIG_PATH="$KERNEL_SOURCE_DIR/arch/arm64/configs/a16_00_defconfig"
-          if [ ! -f "$DEFCONFIG_PATH" ]; then echo "Error: Defconfig file not found at $DEFCONFIG_PATH"; exit 1; fi
-          
+          # Personalize
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}-LKM\"" >> $DEFCONFIG_PATH
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
-          CONFIG_SCRIPT_PATH="$KERNEL_SOURCE_DIR/scripts/config"
           
-          # --- Full-Scale Attack on KNOX ---
+          # Attack KNOX
           $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH \
           --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n \
           --set-val UH n --set-val PROCA n --set-val FIVE n --set-val GAF_V6 n \
@@ -98,22 +87,17 @@ jobs:
           --set-val RKP_CFP_JOPP n --set-val RKP_CFP n --set-val KDP_CRED n \
           --set-val KDP_NS n --set-val KDP_TEST n --set-val RKP_CRED n
 
-          # --- Other Configurations ---
-          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_CUBIC n
+          # Configure LKM
           $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val KSU m --set-val MODULES y --set-val MODULE_UNLOAD y
-
-      - name: Build The Kernel
-        working-directory: ${{ steps.setup.outputs.workspace_path }}
-        run: |
-          export BUILD_CONFIG="out/build.config"
-          python2 ${{ steps.kernel_source.outputs.kernel_source_path }}/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
           
-          # --- Use the correct, precise path to the build script ---
-          ${{ steps.kernel_source.outputs.kernel_path }}/build/build.sh
+          # --- Build Step ---
+          export BUILD_CONFIG="out/build.config"
+          python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
+          kernel/build/build.sh
 
       - name: Create Flashable ZIP using AnyKernel3
         id: zip_package
-        working-directory: ${{ steps.setup.outputs.workspace_path }}
+        working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
           DIST_DIR=$(find out -type d -name "dist" | head -n 1)
