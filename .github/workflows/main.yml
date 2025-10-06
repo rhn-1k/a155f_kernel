@@ -20,9 +20,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Maximize Build Space
-        uses: rokibhasansagar/slimhub_actions@main
-
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
