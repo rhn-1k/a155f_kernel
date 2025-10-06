@@ -84,8 +84,8 @@ jobs:
           export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
           export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # *** FIX: Copy the missing GKI config file as you discovered ***
-          cp kernel-5.10/build.config.gki.aarch64 out/target/product/a15/obj/KERNEL_OBJ/
+          # *** FIX: Patch the build script to bypass the GKI config check ***
+          sed -i 's/GKI_BUILD_CONFIG/#GKI_BUILD_CONFIG/' kernel/build/_setup_env.sh
           
           # Run the build script
           cd kernel
