@@ -40,12 +40,14 @@ jobs:
       - name: Setup Workspace
         id: setup
         run: |
-          mkdir -p /home/runner/workspace/prebuilts
+          mkdir -p /home/runner/workspace
           echo "workspace_path=/home/runner/workspace" >> $GITHUB_OUTPUT
 
       - name: Download, Setup, and Clean Toolchain
-        working-directory: ${{ steps.setup.outputs.workspace_path }}/prebuilts
+        working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
+          mkdir -p prebuilts
+          cd prebuilts
           curl -L -o toolchain.tar.gz "${{ github.event.inputs.TOOLCHAIN_URL }}"
           tar -xf toolchain.tar.gz
           rm toolchain.tar.gz
@@ -73,27 +75,18 @@ jobs:
             mv $NESTED_DIR/* .
             rm -rf $NESTED_DIR
           fi
-          # Find the main build script directory ('kernel')
           KERNEL_DIR=$(find . -maxdepth 2 -type f -name "build.sh" -printf "%h\n" | xargs dirname)
           echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
-          
-          # --- CORRECTED DEFCONFIG PATH ---
-          # The defconfig is inside the kernel source code directory (e.g., kernel-5.10), not the build script directory.
           KERNEL_SOURCE_DIR=$(find . -maxdepth 2 -type d -name "kernel-5.10")
+          echo "kernel_source_path=$(realpath $KERNEL_SOURCE_DIR)" >> $GITHUB_OUTPUT
           DEFCONFIG_PATH="$KERNEL_SOURCE_DIR/arch/arm64/configs/a16_00_defconfig"
-          
-          echo "Using defconfig at: $DEFCONFIG_PATH"
           if [ ! -f "$DEFCONFIG_PATH" ]; then
-            echo "Error: Defconfig file not found at the expected path!"
+            echo "Error: Defconfig file not found!"
             exit 1
           fi
-
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}-LKM\"" >> $DEFCONFIG_PATH
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
-          
-          # Use the correct path to the 'config' script
           CONFIG_SCRIPT_PATH="$KERNEL_SOURCE_DIR/scripts/config"
-          
           $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
           $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_CUBIC n
           $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val KSU m
@@ -104,11 +97,8 @@ jobs:
         working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
           export BUILD_CONFIG="out/build.config"
-          # Use the correct path to the 'gen_build_config.py' script
-          KERNEL_SOURCE_DIR=$(find . -maxdepth 2 -type d -name "kernel-5.10")
-          python2 $KERNEL_SOURCE_DIR/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
-          
-          # Run the main build script
+          python2 ${{ steps.kernel_source.outputs.kernel_source_path }}/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
+          # --- CORRECTED BUILD SCRIPT PATH ---
           ${{ steps.kernel_source.outputs.kernel_path }}/build/build.sh
 
       - name: Create Flashable ZIP using AnyKernel3
@@ -116,8 +106,14 @@ jobs:
         working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
-          cp out/dist/Image.gz anykernel/
-          KSU_MODULE=$(find out/dist -name "ksu.ko")
+          # Find the output directory, it might be nested
+          DIST_DIR=$(find out -type d -name "dist" | head -n 1)
+          if [ -z "$DIST_DIR" ]; then
+            echo "Error: 'dist' directory not found in 'out'!"
+            exit 1
+          fi
+          cp $DIST_DIR/Image.gz anykernel/
+          KSU_MODULE=$(find $DIST_DIR -name "ksu.ko")
           if [ -f "$KSU_MODULE" ]; then
             cp $KSU_MODULE anykernel/
           fi
