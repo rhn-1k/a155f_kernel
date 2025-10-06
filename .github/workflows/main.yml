@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The Final, Smartest Way
+name: Build A15 Kernel - The Final Version
 
 on:
   workflow_dispatch:
@@ -37,7 +37,7 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # *** THE REAL FIX: Download a pre-built, working magiskboot binary ***
+          # Download a PRE-BUILT, RELIABLE magiskboot binary
           mkdir -p tools
           curl -L -o tools/magiskboot "https://github.com/xiaoxindada/magiskboot-aarch64/releases/latest/download/magiskboot"
           chmod +x tools/magiskboot
@@ -61,28 +61,32 @@ jobs:
           echo "CC=clang" >> $GITHUB_ENV
           echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
-      - name: Configure, Patch, and Integrate KernelSU
+      - name: Configure, Patch, and Integrate
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
+          # Recovery Boot Patch
           sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' drivers/power/reset/reboot-mode.c
+          
+          # Defconfig modifications
           chmod +x scripts/config
           DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
           ./scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
           ./scripts/config --file $DEFCONFIG_FILE --set-val KSU y
           
-          mkdir -p ../custom_defconfigs
-          echo "CONFIG_LOCALVERSION_AUTO=n" > ../custom_defconfigs/version_defconfig
-          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> ../custom_defconfigs/version_defconfig
+          # Custom Version
+          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
+          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
 
+          # KernelSU Setup
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Build The Kernel (The Smart Method)
+      - name: Build The Kernel (The Correct Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           # Generate the main build config
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Define the magic build options, now using the pre-built tool
+          # Define the build options to control the build script
           export GKI_KERNEL_BUILD_OPTIONS="
               SKIP_MRPROPER=1
               BUILD_BOOT_IMG=1
@@ -101,14 +105,13 @@ jobs:
           export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
           export MERGE_CONFIG="$(pwd)/kernel-5.10/scripts/kconfig/merge_config.sh"
           
-          # Run the build from within the 'kernel' directory, passing the magic options
+          # Run the build from within the 'kernel' directory, passing the build options
           cd kernel
           env ${GKI_KERNEL_BUILD_OPTIONS} ./build/build.sh
 
       - name: Upload Final boot.img
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          # The build script already creates boot.img, we just need to find it and upload
           BOOT_IMG_PATH="out/target/product/a15/obj/KERNEL_OBJ/boot.img"
           if [ ! -f "$BOOT_IMG_PATH" ]; then
              echo "Error: boot.img not found!"
