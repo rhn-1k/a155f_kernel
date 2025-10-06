@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The True, Final Method
+name: Build A15 Kernel - The Simple, True Method
 
 on:
   workflow_dispatch:
@@ -8,6 +8,9 @@ on:
         required: true
       TOOLCHAIN_URL:
         description: 'AOSP Clang Toolchain URL (.tar.gz)'
+        required: true
+      STOCK_BOOT_IMG_URL:
+        description: 'Stock boot.img URL (Used for repacking)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -34,13 +37,11 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # Get the tools the developer ACTUALLY uses: a pre-made build.config and mkbootimg.py
-          git clone https://android.googlesource.com/platform/system/tools/mkbootimg --depth=1
-          mkdir -p oem_prebuilt_images
-          curl -L -o oem_prebuilt_images/gki-ramdisk.lz4 "https://github.com/ravindu644/android_kernel_a165f/raw/main/oem_prebuilt_images/gki-ramdisk.lz4"
+          mkdir -p tools
+          curl -L -o tools/magiskboot "https://github.com/poqdavid/android_kernel_samsung_sma155f/raw/refs/heads/kernelsu/scripts/bin/magiskboot"
+          chmod +x tools/magiskboot
           
-          # *** THE REAL FIX: Get a working build.config instead of generating a broken one ***
-          curl -L -o build.config "https://raw.githubusercontent.com/poqdavid/android_kernel_samsung_sma155f/kernelsu/build.config"
+          curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
@@ -68,43 +69,39 @@ jobs:
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Build The Kernel (The True, Final Method)
+      - name: Build The Kernel (The Official Samsung Script Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Starting The Main Build (The True, Final Method) ---"
+          echo "--- Starting The Main Build (The Official Samsung Script Method) ---"
           
-          # Step 1: Create the output directory and place the working build.config there
-          mkdir -p out/target/product/a15/obj/KERNEL_OBJ
-          cp build.config out/target/product/a15/obj/KERNEL_OBJ/
+          # This block IS the official build_kernel.sh script, implemented correctly.
           
-          # Step 2: Define all environment variables, exactly as the developer does
+          # 1. cd kernel-5.10
+          cd kernel-5.10
+          
+          # 2. python scripts/gen_build_config.py ...
+          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
+          
+          # 3. export variables
           export PLATFORM_VERSION=12
-          export OUT_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # These are the magic GKI options from the developer's script
-          export GKI_KERNEL_BUILD_OPTIONS="
-              SKIP_MRPROPER=1
-              BUILD_BOOT_IMG=1
-              MKBOOTIMG_PATH=$(pwd)/mkbootimg/mkbootimg.py
-              KERNEL_BINARY=Image.gz
-              BOOT_IMAGE_HEADER_VERSION=4
-              SKIP_VENDOR_BOOT=1
-              GKI_RAMDISK_PREBUILT_BINARY=$(pwd)/oem_prebuilt_images/gki-ramdisk.lz4
-              LTO=thin
-          "
+          # 4. cd ../kernel
+          cd ../kernel
           
-          # Step 3: Run the build from inside the 'kernel' directory
-          cd kernel
-          env ${GKI_KERNEL_BUILD_OPTIONS} ./build/build.sh
+          # 5. ./build/build.sh
+          ./build/build.sh
 
-      - name: Package and Upload Final Artifact
+      - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Packaging Final Image ---"
-          cp out/target/product/a15/obj/KERNEL_OBJ/boot.img .
-          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" boot.img
+          echo "--- Repacking Final Image ---"
+          ./tools/magiskboot unpack stock_boot.img
+          cp out/target/product/a15/obj/KERNEL_OBJ/kernel-5.10/arch/arm64/boot/Image.gz kernel
+          ./tools/magiskboot repack stock_boot.img new_boot.img
+          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" new_boot.img
           
           FILE_PATH=$(realpath "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
