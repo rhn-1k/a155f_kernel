@@ -37,8 +37,9 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # Clone tools needed by the build script
+          # Clone AND BUILD Magisk tools (mkbootimg)
           git clone https://github.com/topjohnwu/Magisk.git -b master --depth 1 mkbootimg
+          (cd mkbootimg && ./build.sh -t)
           
           # Extract Ramdisk from stock boot.img
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
@@ -68,7 +69,6 @@ jobs:
           ./scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
           ./scripts/config --file $DEFCONFIG_FILE --set-val KSU y
           
-          # Create a custom version folder for our build
           mkdir -p ../custom_defconfigs
           echo "CONFIG_LOCALVERSION_AUTO=n" > ../custom_defconfigs/version_defconfig
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> ../custom_defconfigs/version_defconfig
