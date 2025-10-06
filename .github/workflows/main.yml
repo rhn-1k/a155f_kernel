@@ -1,4 +1,4 @@
-name: Build Your Kernel (LKM) v2
+name: Build KernelSU-Next Kernel (LKM)
 
 on:
   workflow_dispatch:
@@ -12,14 +12,25 @@ on:
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
         required: true
-        default: 'YourName'
+        default: 'rhn_1k'
 
 jobs:
   build:
-    name: Build and Package Your Kernel
-    runs-on: ubuntu-22.04 # Using the specified runner version
+    name: Build and Package Kernel
+    runs-on: ubuntu-22.04
 
     steps:
+      - name: Maximize Build Space by Cleaning Runner
+        uses: rokibhasansagar/slimhub_actions@main
+        with:
+          # This action safely removes pre-installed software to free up space.
+          # It is necessary to prevent "No space left on device" errors.
+          cache: 'false'
+          go: 'false'
+          dotnet: 'true'
+          haskell: 'true'
+          android: 'true'
+          
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -28,13 +39,10 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          # Add deadsnakes PPA for Python 2
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository -y ppa:deadsnakes/ppa
           sudo apt-get update
-          # Install corrected dependencies
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2.7
-          # Create a symlink for python2
           sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
 
       - name: Setup Workspace
@@ -43,11 +51,12 @@ jobs:
           mkdir -p /home/runner/workspace/prebuilts
           echo "workspace_path=/home/runner/workspace" >> $GITHUB_OUTPUT
 
-      - name: Download and Setup Toolchain
+      - name: Download, Setup, and Clean Toolchain
         working-directory: ${{ steps.setup.outputs.workspace_path }}/prebuilts
         run: |
           curl -L -o toolchain.tar.gz "${{ github.event.inputs.TOOLCHAIN_URL }}"
           tar -xf toolchain.tar.gz
+          rm toolchain.tar.gz
 
       - name: Setup Kernel Build Environment
         run: |
@@ -66,6 +75,7 @@ jobs:
         run: |
           curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q kernel_source.zip
+          rm kernel_source.zip
           NESTED_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
           if [ -d "$NESTED_DIR" ]; then
             mv $NESTED_DIR/* .
@@ -114,6 +124,5 @@ jobs:
             exit 1
           fi
           echo "----------------------------------------------------------------"
-          echo "File uploaded successfully!"
-          echo "Your Kernel, built by you, is ready: $DOWNLOAD_PAGE"
+          echo "Build successful. Download link: $DOWNLOAD_PAGE"
           echo "----------------------------------------------------------------"
