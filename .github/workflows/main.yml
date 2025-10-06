@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       KERNEL_SOURCE_URL:
-        description: 'Direct URL to your kernel source (.tar.gz, .zip)'
+        description: 'Direct URL to your original kernel source (.tar.gz, .zip)'
         required: true
       TOOLCHAIN_URL:
         description: 'Direct URL to your toolchain archive (.tar.gz)'
@@ -52,13 +52,24 @@ jobs:
           echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
           echo "LTO=thin" >> $GITHUB_ENV
 
-      - name: Download and Prepare Kernel Source
+      - name: Download, Extract, and Fix Kernel Source Structure
         id: kernel_source
         working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
-          curl -L -o kernel_source.tar.gz "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
-          tar -xf kernel_source.tar.gz
-          KERNEL_DIR=$(dirname $(find . -maxdepth 3 -type f -name "Kconfig" -print -quit))
+          # Download the original archive
+          curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
+          # Extract it
+          unzip kernel_source.zip
+          # Find the unwanted nested directory
+          NESTED_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
+          # Move all contents from the nested directory up to the current level
+          if [ -d "$NESTED_DIR" ]; then
+            echo "Nested directory found: $NESTED_DIR. Moving contents up."
+            mv $NESTED_DIR/* .
+            rm -rf $NESTED_DIR
+          fi
+          # Now the structure is clean, find the main kernel directory
+          KERNEL_DIR=$(find . -maxdepth 2 -type f -name "build.sh" -printf "%h\n" | xargs dirname)
           echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
           DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/a15_00_defconfig"
           # Apply critical defconfig modifications
