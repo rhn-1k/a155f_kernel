@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The Official Script Method
+name: Build A15 Kernel - The Final, Proven Method
 
 on:
   workflow_dispatch:
@@ -45,17 +45,16 @@ jobs:
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
-      - name: Setup Toolchain (The Correct Way for The Script)
+      - name: Setup Toolchain
         run: |
-          echo "--- Setting up Toolchain in the expected directory ---"
-          # The build script expects the toolchain in a very specific path.
-          # We will create this path and extract the toolchain there.
-          TOOLCHAIN_DIR="prebuilts/clang/host/linux-x86/clang-r416183b"
-          mkdir -p $TOOLCHAIN_DIR
-          curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C $TOOLCHAIN_DIR --strip-components=1
-          
-          # We no longer need to manually export PATH. The script will do it.
-          echo "Toolchain is ready at $TOOLCHAIN_DIR"
+          echo "--- Setting up Toolchain ---"
+          mkdir -p toolchain
+          curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
+          echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
       - name: Configure, Patch, and Integrate
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
@@ -70,13 +69,28 @@ jobs:
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Build The Kernel (Using The Official build_kernel.sh)
+      - name: Generate Build Config
+        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
+        run: |
+          echo "--- Generating build.config from the correct directory ---"
+          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
+
+      - name: Build The Kernel (The Final, Corrected Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Starting The Main Build using the official script ---"
-          chmod +x build_kernel.sh
-          # Run the script without any manual PATH exports. It will find the toolchain.
-          ./build_kernel.sh
+          echo "--- Starting The Main Build ---"
+          
+          # *** THE ULTIMATE, FINAL, TRUE FIX: Patch the build script to preserve the PATH ***
+          sed -i 's|export PATH=${TOOLCHAIN_PATH}/bin$|export PATH=${TOOLCHAIN_PATH}/bin:${PATH}|' kernel/build/build.sh
+          
+          export PLATFORM_VERSION=12
+          export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export MERGE_CONFIG="kernel-5.10/scripts/kconfig/merge_config.sh"
+          
+          # Run the patched script from the root
+          ./kernel/build.sh
 
       - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
