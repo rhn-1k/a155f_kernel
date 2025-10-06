@@ -1,0 +1,73 @@
+name: Sync Latest Updated Branch with Submodules
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repo:
+        description: 'The repository to copy from (e.g., user/repo)'
+        required: true
+        default: 'nillerusr/source-engine'
+      pat:
+        description: 'A Personal Access Token (PAT) with "repo" and "workflow" scopes'
+        required: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # الخطوة 1: اكتشاف أحدث فرع تم التعديل عليه في المستودع المصدر
+      - name: Find the latest updated branch
+        id: find_branch # <-- نعطي هذه الخطوة ID لنستخدم نتيجتها لاحقًا
+        run: |
+          # هذا الأمر يتصل بالمستودع المصدر، يسرد كل الفروع البعيدة، يرتبها حسب تاريخ آخر commit (من الأقدم للأحدث)،
+          # ثم يأخذ آخر سطر (الأحدث)، ويزيل المسافات الزائدة واسم "origin/"
+          LATEST_BRANCH=$(git ls-remote --heads https://github.com/${{ github.event.inputs.upstream_repo }}.git | \
+            sort -k1 -r | \
+            head -n 1 | \
+            sed 's?.*refs/heads/??')
+          
+          echo "Latest updated branch is: $LATEST_BRANCH"
+          # هذا السطر يحفظ اسم الفرع في مخرجات الخطوة (outputs)
+          echo "branch_name=$LATEST_BRANCH" >> $GITHUB_OUTPUT
+
+      # الخطوة 2: سحب الفرع المحدد فقط مع الوحدات النمطية الخاصة به
+      - name: Checkout latest branch and its submodules
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.upstream_repo }}
+          # نستخدم هنا نتيجة الخطوة السابقة
+          ref: ${{ steps.find_branch.outputs.branch_name }}
+          submodules: 'recursive'
+          path: 'upstream'
+          token: ${{ github.event.inputs.pat }}
+
+      # الخطوة 3: إعداد مستودعك للدفع القسري
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+        with:
+          path: 'mine'
+          token: ${{ github.event.inputs.pat }}
+
+      # الخطوة 4: نسخ المحتوى الجديد إلى مجلد مستودعك
+      - name: Sync new content to your repo folder
+        run: |
+          find mine -mindepth 1 ! -name ".git" -exec rm -rf {} +
+          rsync -av upstream/ mine/
+
+      # الخطوة 5: حفظ التغييرات ودفعها بقوة
+      - name: Commit and Force Push to your repository
+        run: |
+          cd mine
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions-bot@github.com"
+          
+          git add -A
+          
+          if [ -n "$(git status --porcelain)" ]; then
+            # استخدام اسم الفرع المكتشف في رسالة الـ commit
+            git commit -m "Force sync from latest branch: ${{ steps.find_branch.outputs.branch_name }}"
+            git push --force
+            echo "Repository has been force-synced with the latest upstream branch."
+          else
+            echo "No changes to sync."
+          fi
