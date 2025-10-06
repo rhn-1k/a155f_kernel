@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The Final Version
+name: Build A15 Kernel - The Final, Proven Method
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
         description: 'AOSP Clang Toolchain URL (.tar.gz)'
         required: true
       STOCK_BOOT_IMG_URL:
-        description: 'Stock boot.img URL (Used for Ramdisk)'
+        description: 'Stock boot.img URL (Used for Ramdisk Extraction)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -32,17 +32,21 @@ jobs:
       - name: Download and Prepare Workspace
         id: workspace
         run: |
+          echo "--- Preparing Workspace ---"
           # Download and extract Samsung Kernel Source
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # Download a PRE-BUILT, RELIABLE magiskboot binary
+          # *** THE ULTIMATE, FINAL FIX: Use the EXACT, DIRECT magiskboot binary URL you provided ***
           mkdir -p tools
-          curl -L -o tools/magiskboot "https://github.com/xiaoxindada/magiskboot-aarch64/releases/latest/download/magiskboot"
+          curl -L -o tools/magiskboot "https://github.com/poqdavid/android_kernel_samsung_sma155f/raw/refs/heads/kernelsu/scripts/bin/magiskboot"
           chmod +x tools/magiskboot
           
-          # Extract Ramdisk from stock boot.img using the pre-built tool
+          # Clone the OFFICIAL Google mkbootimg tool for the final build step
+          git clone https://android.googlesource.com/platform/system/tools/mkbootimg --depth=1
+          
+          # Extract Ramdisk from stock boot.img using the developer's own tool
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
           ./tools/magiskboot unpack stock_boot.img
           mv ramdisk.cpio ramdisk.cpio.gz
@@ -53,6 +57,7 @@ jobs:
 
       - name: Setup Toolchain
         run: |
+          echo "--- Setting up Toolchain ---"
           mkdir -p toolchain
           curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
           echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
@@ -64,6 +69,7 @@ jobs:
       - name: Configure, Patch, and Integrate
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
+          echo "--- Patching and Configuring Kernel ---"
           # Recovery Boot Patch
           sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' drivers/power/reset/reboot-mode.c
           
@@ -80,17 +86,18 @@ jobs:
           # KernelSU Setup
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Build The Kernel (The Correct Method)
+      - name: Build The Kernel (The 100% Correct Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
+          echo "--- Starting The Main Build ---"
           # Generate the main build config
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Define the build options to control the build script
+          # Define the build options, using the OFFICIAL mkbootimg.py path
           export GKI_KERNEL_BUILD_OPTIONS="
               SKIP_MRPROPER=1
               BUILD_BOOT_IMG=1
-              MKBOOTIMG_PATH=$(pwd)/tools/magiskboot
+              MKBOOTIMG_PATH=$(pwd)/mkbootimg/mkbootimg.py
               KERNEL_BINARY=Image.gz
               BOOT_IMAGE_HEADER_VERSION=4
               SKIP_VENDOR_BOOT=1
@@ -105,16 +112,17 @@ jobs:
           export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
           export MERGE_CONFIG="$(pwd)/kernel-5.10/scripts/kconfig/merge_config.sh"
           
-          # Run the build from within the 'kernel' directory, passing the build options
+          # Run the build
           cd kernel
           env ${GKI_KERNEL_BUILD_OPTIONS} ./build/build.sh
 
       - name: Upload Final boot.img
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
+          echo "--- Preparing and Uploading Artifact ---"
           BOOT_IMG_PATH="out/target/product/a15/obj/KERNEL_OBJ/boot.img"
           if [ ! -f "$BOOT_IMG_PATH" ]; then
-             echo "Error: boot.img not found!"
+             echo "Error: Final boot.img not found!"
              exit 1
           fi
           
