@@ -1,4 +1,4 @@
-name: Build A15 Kernel
+name: Build A15 Kernel - The Smart Way
 
 on:
   workflow_dispatch:
@@ -6,11 +6,8 @@ on:
       KERNEL_SOURCE_URL:
         description: 'Samsung Kernel Source URL (.zip)'
         required: true
-      TOOLCHAIN_URL:
-        description: 'AOSP Clang Toolchain URL (.tar.gz)'
-        required: true
       STOCK_BOOT_IMG_URL:
-        description: 'Stock boot.img URL'
+        description: 'Stock boot.img URL (Used for Ramdisk)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -23,90 +20,101 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Install Build Dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Download and Extract All Sources
+      - name: Download and Prepare Workspace
         id: workspace
         run: |
+          # Download and extract Samsung Kernel Source
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           tar -xf Kernel.tar.gz
-          if [ ! -d "kernel-5.10" ] || [ ! -d "kernel" ]; then
-            echo "Error: The expected 'kernel-5.10' and 'kernel' directories were not found."
-            exit 1
-          fi
           
-          mkdir -p toolchain
-          curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
+          # Clone tools needed by the build script
+          git clone https://github.com/topjohnwu/Magisk.git -b master --depth 1 mkbootimg
           
-          git clone https://github.com/topjohnwu/Magisk.git magisk_tools
+          # Extract Ramdisk from stock boot.img
+          curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
+          ./mkbootimg/build/tools/magiskboot unpack stock_boot.img
+          mv ramdisk.cpio ramdisk.cpio.gz
+          gzip -d ramdisk.cpio.gz
+          lz4 ramdisk.cpio gki-ramdisk.lz4
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
-      - name: Setup Environment Variables
+      - name: Setup Toolchain
         run: |
+          # Use a standard, reliable toolchain
+          curl -LO "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r498229b.tar.gz"
+          mkdir -p toolchain
+          tar -xzf clang-r498229b.tar.gz -C toolchain
+          rm clang-r498229b.tar.gz
           echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
           echo "CC=clang" >> $GITHUB_ENV
-          echo "PATH=${{ steps.workspace.outputs.work_dir }}/toolchain/bin:$PATH" >> $GITHUB_ENV
+          echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
       - name: Configure, Patch, and Integrate KernelSU
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
+        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' kernel-5.10/drivers/power/reset/reboot-mode.c
-          echo "Recovery boot patch applied."
-
-          chmod +x kernel-5.10/scripts/config
-          DEFCONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
-          ./kernel-5.10/scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
-          ./kernel-5.10/scripts/config --file $DEFCONFIG_FILE --set-val KSU y
+          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' drivers/power/reset/reboot-mode.c
+          chmod +x scripts/config
+          DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
+          ./scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
+          ./scripts/config --file $DEFCONFIG_FILE --set-val KSU y
           
-          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
-          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
+          # Create a custom version folder for our build
+          mkdir -p ../custom_defconfigs
+          echo "CONFIG_LOCALVERSION_AUTO=n" > ../custom_defconfigs/version_defconfig
+          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> ../custom_defconfigs/version_defconfig
 
-          (cd kernel-5.10 && curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -)
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Build The Kernel (The REAL Correct Way)
+      - name: Build The Kernel (The Smart Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           # Generate the main build config
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Set build environment variables using RELATIVE paths
+          # Define the magic build options
+          export GKI_KERNEL_BUILD_OPTIONS="
+              SKIP_MRPROPER=1
+              BUILD_BOOT_IMG=1
+              MKBOOTIMG_PATH=$(pwd)/mkbootimg/build/tools/magiskboot
+              KERNEL_BINARY=Image.gz
+              BOOT_IMAGE_HEADER_VERSION=4
+              SKIP_VENDOR_BOOT=1
+              GKI_RAMDISK_PREBUILT_BINARY=$(pwd)/gki-ramdisk.lz4
+              LTO=thin
+          "
+          
+          # Set the rest of the environment
           export PLATFORM_VERSION=12
-          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export MERGE_CONFIG="$(pwd)/kernel-5.10/scripts/kconfig/merge_config.sh"
           
-          # Tell the build script to skip 'make mrproper'
-          export SKIP_MRPROPER=1
-          
-          # *** THE FINAL FIX: Change directory to 'kernel' before running the build script ***
+          # Run the build from within the 'kernel' directory, passing the magic options
           cd kernel
-          ./build/build.sh
+          env ${GKI_KERNEL_BUILD_OPTIONS} ./build/build.sh
 
-      - name: Repack Boot Image and Upload
+      - name: Upload Final boot.img
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
-          
-          ./magisk_tools/build/tools/magiskboot unpack stock_boot.img
-          
-          KERNEL_IMAGE="out/target/product/a15/obj/KERNEL_OBJ/arch/arm64/boot/Image.gz"
-          if [ ! -f "$KERNEL_IMAGE" ]; then
-             echo "Error: Kernel Image.gz not found!"
+          # The build script already creates boot.img, we just need to find it and upload
+          BOOT_IMG_PATH="out/target/product/a15/obj/KERNEL_OBJ/boot.img"
+          if [ ! -f "$BOOT_IMG_PATH" ]; then
+             echo "Error: boot.img not found!"
              exit 1
           fi
-          cp $KERNEL_IMAGE kernel
           
-          ./magisk_tools/build/tools/magiskboot repack stock_boot.img
-          
-          mv new-boot.img "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img"
+          mv $BOOT_IMG_PATH "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img"
           FILE_PATH=$(realpath "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img")
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
