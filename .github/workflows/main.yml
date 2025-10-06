@@ -1,8 +1,14 @@
-name: Build A15 Kernel - Final Path Fix
+name: Build A15 Kernel
 
 on:
   workflow_dispatch:
     inputs:
+      KERNEL_SOURCE_URL:
+        description: 'Samsung Kernel Source URL (.zip)'
+        required: true
+      TOOLCHAIN_URL:
+        description: 'AOSP Clang Toolchain URL (.tar.gz)'
+        required: true
       STOCK_BOOT_IMG_URL:
         description: 'Stock boot.img URL'
         required: true
@@ -42,10 +48,7 @@ jobs:
       - name: Download and Extract All Sources
         id: workspace
         run: |
-          KERNEL_SOURCE_URL="https://opensource.samsung.com/upload/A155FXXU1AXB7_14.zip"
-          TOOLCHAIN_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r498229b.tar.gz"
-
-          curl -L -o source.zip "$KERNEL_SOURCE_URL"
+          curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           if [ ! -d "kernel-5.10" ] || [ ! -d "kernel" ]; then
@@ -54,7 +57,7 @@ jobs:
           fi
           
           mkdir -p toolchain
-          curl -L "$TOOLCHAIN_URL" | tar -xz -C toolchain --strip-components=1
+          curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
           
           git clone https://github.com/topjohnwu/Magisk.git magisk_tools
           
@@ -88,16 +91,13 @@ jobs:
       - name: Build The Kernel
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          # Generate build config
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Set build environment variables using RELATIVE paths
           export PLATFORM_VERSION=12
           export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
           export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
           export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # Run the build script
           cd kernel
           ./build/build.sh
 
