@@ -1,0 +1,25 @@
+name: Verify Archive Name
+
+on:
+  workflow_dispatch:
+    inputs:
+      KERNEL_SOURCE_URL:
+        description: 'Direct URL to your RAW Samsung kernel source (.zip)'
+        required: true
+
+jobs:
+  verify:
+    name: Verify Archive Name
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Download and List Contents
+        run: |
+          echo "--- Downloading file ---"
+          curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
+          
+          echo "--- Unzipping file ---"
+          unzip -q source.zip
+          
+          echo "--- Listing contents of the current directory ---"
+          ls -la
