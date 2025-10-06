@@ -1,4 +1,4 @@
-name: Build A15 Kernel (Samsung Official Method)
+name: Build A15 Kernel (poqdavid Exact Method - Corrected)
 
 on:
   workflow_dispatch:
@@ -8,6 +8,9 @@ on:
         required: true
       TOOLCHAIN_URL:
         description: 'Direct URL to your AOSP Clang toolchain (.tar.gz)'
+        required: true
+      STOCK_BOOT_IMG_URL:
+        description: 'Direct URL to your stock boot.img file'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -34,15 +37,18 @@ jobs:
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Download and Prepare Workspace
+      - name: Download and Extract Kernel Source
         id: workspace
         run: |
+          # This step now correctly handles the nested archive (zip -> tar.gz -> source)
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           KERNEL_ARCHIVE=$(find . -maxdepth 1 -name "*.tar.gz" -o -name "*.tar" | head -n 1)
-          if [ -n "$KERNEL_ARCHIVE" ]; then
-            tar -xf "$KERNEL_ARCHIVE"
+          if [ -z "$KERNEL_ARCHIVE" ]; then
+            echo "Error: Could not find Kernel.tar.gz or similar archive inside the zip."
+            exit 1
           fi
+          tar -xf "$KERNEL_ARCHIVE"
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
       - name: Setup Toolchain
@@ -56,51 +62,70 @@ jobs:
           echo "CC=clang" >> $GITHUB_ENV
           echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
-      - name: Integrate KernelSU and SuSFS
-        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
-        run: |
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -
-          git clone https://github.com/KernelSU-Next/SuSFS.git --depth=1 susfs
-          git apply --directory="susfs" --no-index susfs/ksu.patch
-          rm -rf susfs
-          
-      - name: Apply Patches and Configure
-        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
-        run: |
-          DEFCONFIG_PATH="arch/arm64/configs/a15_00_defconfig"
-          
-          TARGET_FILE="drivers/power/reset/reboot-mode.c"
-          if [ -f "$TARGET_FILE" ]; then
-            sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$TARGET_FILE"
-          fi
-          
-          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_PATH
-          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
-          echo "CONFIG_KSU=y" >> $DEFCONFIG_PATH
-          echo "CONFIG_SUSFS=y" >> $DEFCONFIG_PATH
-
-      - name: Build The Kernel (Samsung Official Method for A15)
+      - name: Configure, Patch, and Build (Exact poqdavid Script)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
+          # === Start of poqdavid's script logic ===
+
+          # 1. Modify configs
+          echo "Modifying configs..."
+          CONFIG_SCRIPT="kernel-5.10/scripts/config"
+          DEFCONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
+          chmod +x $CONFIG_SCRIPT
           
+          # Disable Samsung Protections
+          ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
+          
+          # Enable KernelSU
+          ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val KSU y
+
+          # Add custom version
+          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
+          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
+
+          # 2. Integrate KernelSU
+          echo "Setting up KernelSU..."
+          cd kernel-5.10
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          
+          # 3. Generate build config
+          echo "Generating build config..."
+          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
+          
+          # 4. Export environment variables and build
+          echo "Building Kernel..."
+          export LTO=thin
+          export ARCH=arm64
           export PLATFORM_VERSION=12
-          export OUT_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          cd kernel
+          cd ../kernel
           ./build/build.sh
+          
+          # === End of poqdavid's script logic ===
 
-      - name: Package for Odin and Upload to Gofile
+      - name: Repack Boot Image and Upload to Gofile
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          mkdir -p dist
-          cp out/target/product/a15/obj/KERNEL_OBJ/boot.img dist/boot.img
-          cd dist
-          tar -cvf "Kernel-A15-${{ github.event.inputs.YOUR_NAME }}.tar" boot.img
+          git clone https://github.com/topjohnwu/Magisk.git magisk_tools
+          curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
           
-          FILE_PATH=$(realpath "Kernel-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
+          magisk_tools/build/tools/magiskboot unpack stock_boot.img
+          
+          KERNEL_IMAGE="out/target/product/a15/obj/KERNEL_OBJ/arch/arm64/boot/Image.gz"
+          if [ ! -f "$KERNEL_IMAGE" ]; then
+             echo "Error: Kernel Image.gz not found at the expected path!"
+             exit 1
+          fi
+          cp $KERNEL_IMAGE kernel
+          
+          magisk_tools/build/tools/magiskboot repack stock_boot.img
+          
+          mv new-boot.img "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img"
+          
+          FILE_PATH=$(realpath "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img")
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
           
@@ -111,5 +136,5 @@ jobs:
           fi
           
           echo "----------------------------------------------------------------"
-          echo "Build successful. Download your flashable Odin tar here: $DOWNLOAD_PAGE"
+          echo "Build successful. Download your flashable boot.img here: $DOWNLOAD_PAGE"
           echo "----------------------------------------------------------------"
