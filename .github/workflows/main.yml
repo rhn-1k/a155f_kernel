@@ -1,16 +1,18 @@
-name: Build A15 Kernel
+name: Build A15 Kernel - Final Safe Method
 
 on:
   workflow_dispatch:
     inputs:
       KERNEL_SOURCE_URL:
-        description: 'Direct URL to your RAW Samsung kernel source (.zip)'
+        description: 'Samsung Kernel Source URL (.zip)'
         required: true
+        default: 'https://opensource.samsung.com/upload/A155FXXU1AXB7_14.zip'
       TOOLCHAIN_URL:
-        description: 'Direct URL to your AOSP Clang toolchain (.tar.gz)'
+        description: 'AOSP Clang Toolchain URL (.tar.gz)'
         required: true
+        default: 'https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r498229b.tar.gz'
       STOCK_BOOT_IMG_URL:
-        description: 'Direct URL to your stock boot.img file'
+        description: 'Stock boot.img URL'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -28,83 +30,67 @@ jobs:
         with:
           swap-size-gb: 16
 
-      - name: Install Build Dependencies (BEFORE CLEANING)
+      - name: Install Build Dependencies (Run First)
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-      - name: Maximize Build Space (AFTER INSTALLING DEPS)
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 512
-          swap-size-mb: 0 # Swap is already set
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
+      - name: Manually Free Up Disk Space (Run Second - Safe Method)
+        run: |
+          echo "Initial free space:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/android
+          sudo rm -rf /usr/local/lib/android
+          echo "Free space after safe cleaning:"
+          df -h
 
-      - name: Download and Extract Kernel Source
+      - name: Download and Extract All Sources
         id: workspace
         run: |
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           if [ ! -d "kernel-5.10" ] || [ ! -d "kernel" ]; then
-            echo "Error: The expected 'kernel-5.10' and 'kernel' directories were not found after extraction."
-            ls -la
+            echo "Error: The expected 'kernel-5.10' and 'kernel' directories were not found."
             exit 1
           fi
-          echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
-
-      - name: Checkout KernelSU-Next Repository
-        uses: actions/checkout@v4
-        with:
-          repository: KernelSU-Next/KernelSU-Next
-          path: KernelSU-Next
-          fetch-depth: 1
-
-      - name: Setup Toolchain
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
-        run: |
+          
           mkdir -p toolchain
           curl -L "${{ github.event.inputs.TOOLCHAIN_URL }}" | tar -xz -C toolchain --strip-components=1
+          
+          git clone https://github.com/topjohnwu/Magisk.git magisk_tools
+          
+          echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
+
+      - name: Setup Environment Variables
+        run: |
           echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
           echo "CC=clang" >> $GITHUB_ENV
-          echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
+          echo "PATH=${{ steps.workspace.outputs.work_dir }}/toolchain/bin:$PATH" >> $GITHUB_ENV
 
-      - name: Configure, Patch, and Integrate (Official Method)
+      - name: Configure, Patch, and Integrate KernelSU
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          echo "Integrating KernelSU-Next source code..."
-          ln -sf ${{ github.workspace }}/KernelSU-Next/kernel ${{ github.workspace }}/kernel-5.10/drivers/kernelsu
-          
-          DRIVER_MAKEFILE="drivers/Makefile"
-          DRIVER_KCONFIG="drivers/Kconfig"
-          grep -q "kernelsu" "$DRIVER_MAKEFILE" || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> "$DRIVER_MAKEFILE"
-          grep -q "kernelsu" "$DRIVER_KCONFIG" || sed -i '/endmenu/i\\source \"drivers/kernelsu/Kconfig\"' "$DRIVER_KCONFIG"
-          echo "KernelSU-Next integrated."
+          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' drivers/power/reset/reboot-mode.c
+          echo "Recovery boot patch applied."
 
-          echo "Modifying configs and applying patches..."
-          CONFIG_SCRIPT="scripts/config"
+          chmod +x scripts/config
           DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
-          chmod +x $CONFIG_SCRIPT
+          ./scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
+          ./scripts/config --file $DEFCONFIG_FILE --set-val KSU y
           
-          RECOVERY_PATCH_TARGET="drivers/power/reset/reboot-mode.c"
-          if [ -f "$RECOVERY_PATCH_TARGET" ]; then
-            sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$RECOVERY_PATCH_TARGET"
-            echo "Recovery boot patch applied."
-          fi
-          
-          ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
-          ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val KSU y
-          ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val SUSFS y
-
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
 
-      - name: Build The Kernel (Samsung Official Method for A15)
+          echo "Setting up KernelSU (Base)..."
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+
+      - name: Build The Kernel
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
@@ -117,31 +103,29 @@ jobs:
           cd kernel
           ./build/build.sh
 
-      - name: Repack Boot Image and Upload to Gofile
+      - name: Repack Boot Image and Upload
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          git clone https://github.com/topjohnwu/Magisk.git magisk_tools
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
           
-          magisk_tools/build/tools/magiskboot unpack stock_boot.img
+          ./magisk_tools/build/tools/magiskboot unpack stock_boot.img
           
           KERNEL_IMAGE="out/target/product/a15/obj/KERNEL_OBJ/arch/arm64/boot/Image.gz"
           if [ ! -f "$KERNEL_IMAGE" ]; then
-             echo "Error: Kernel Image.gz not found at the expected path!"
+             echo "Error: Kernel Image.gz not found!"
              exit 1
           fi
           cp $KERNEL_IMAGE kernel
           
-          magisk_tools/build/tools/magiskboot repack stock_boot.img
+          ./magisk_tools/build/tools/magiskboot repack stock_boot.img
           
           mv new-boot.img "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img"
-          
           FILE_PATH=$(realpath "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img")
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
           
           if [ -z "$DOWNLOAD_PAGE" ]; then 
-            echo "Error: Could not extract download page URL! Response was:"
+            echo "Error: Could not get Gofile URL! Response was:"
             echo $RESPONSE
             exit 1
           fi
