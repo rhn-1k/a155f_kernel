@@ -84,8 +84,10 @@ jobs:
           export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
           export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # *** FIX: Patch the build script to bypass the GKI config check ***
-          sed -i 's/GKI_BUILD_CONFIG/#GKI_BUILD_CONFIG/' kernel/build/_setup_env.sh
+          # *** THE REAL FIX: Patch the main build script to disable GKI checks ***
+          BUILD_SCRIPT_PATH="kernel/build/build.sh"
+          sed -i 's/source "${ROOT_DIR}\/build\/_setup_env.sh"/#source "${ROOT_DIR}\/build\/_setup_env.sh"/' "$BUILD_SCRIPT_PATH"
+          sed -i 's/source "${ROOT_DIR}\/build\/_build_gki.sh"/#source "${ROOT_DIR}\/build\/_build_gki.sh"/' "$BUILD_SCRIPT_PATH"
           
           # Run the build script
           cd kernel
