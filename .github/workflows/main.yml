@@ -37,12 +37,10 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # Get the developer's own magiskboot tool
           mkdir -p tools
           curl -L -o tools/magiskboot "https://github.com/poqdavid/android_kernel_samsung_sma155f/raw/refs/heads/kernelsu/scripts/bin/magiskboot"
           chmod +x tools/magiskboot
           
-          # Download the stock boot image to be used as a template later
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
@@ -71,35 +69,31 @@ jobs:
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
+      - name: Generate Build Config (The Correct Way)
+        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
+        run: |
+          echo "--- Generating build.config from the correct directory ---"
+          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
+
       - name: Build The Kernel
-        working-directory: ${{ steps.workspace.outputs.work_dir }}
+        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel
         run: |
           echo "--- Starting The Main Build ---"
-          python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
-          
           export PLATFORM_VERSION=12
-          export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
-          export MERGE_CONFIG="$(pwd)/kernel-5.10/scripts/kconfig/merge_config.sh"
+          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export MERGE_CONFIG="../kernel-5.10/scripts/kconfig/merge_config.sh"
           
-          cd kernel
-          ./build/build.sh
+          ./build.sh
 
       - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           echo "--- Repacking Final Image (The Simple, Correct Method) ---"
-          # Unpack the stock boot image to get its structure
           ./tools/magiskboot unpack stock_boot.img
-          
-          # Replace the kernel with our newly built one
           cp out/target/product/a15/obj/KERNEL_OBJ/kernel-5.10/arch/arm64/boot/Image.gz kernel
-          
-          # Repack the boot image with the new kernel
           ./tools/magiskboot repack stock_boot.img new_boot.img
-          
-          # Create the final Odin flashable tar
           tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" new_boot.img
           
           FILE_PATH=$(realpath "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
