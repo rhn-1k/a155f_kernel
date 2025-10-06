@@ -1,0 +1,64 @@
+name: Sync Everything From Upstream
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repo:
+        description: 'The repository to copy from (e.g., user/repo)'
+        required: true
+        default: 'nillerusr/source-engine'
+      pat:
+        description: 'A Personal Access Token (PAT) with full "repo" scope'
+        required: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # الخطوة 1: تحميل المستودع المصدر (الذي تريد النسخ منه)
+      # سيتم وضعه في مجلد باسم "upstream"
+      - name: Clone the upstream repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.upstream_repo }}
+          path: 'upstream'
+
+      # الخطوة 2: تحميل مستودعك الخاص (الذي تريد النسخ إليه)
+      # سيتم وضعه في مجلد باسم "mine"
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+        with:
+          path: 'mine'
+          token: ${{ github.event.inputs.pat }}
+
+      # الخطوة 3: عملية النسخ الشاملة
+      # هذه هي الخطوة الأساسية التي تنفذ طلبك
+      - name: Sync all files from upstream to your repo
+        run: |
+          # هذا الأمر هو مفتاح العملية:
+          # -av: وضع الأرشيف (يحافظ على الصلاحيات والروابط) + وضع مطول (يعرض الملفات المنسوخة).
+          # --delete: يحذف أي ملف موجود في مستودعك (mine) وغير موجود في المصدر (upstream).
+          # upstream/./: المصدر. النقطة الإضافية (./) تضمن نسخ الملفات والمجلدات المخفية (مثل .github, .gitignore).
+          # mine/: الوجهة.
+          # --exclude '.git/': هذا هو الاستثناء الوحيد والمهم. نحن لا نريد نسخ سجل Git الخاص بالمصدر.
+          rsync -av --delete upstream/./ mine/ --exclude '.git/'
+
+      # الخطوة 4: تثبيت (Commit) ودفع (Push) التغييرات إلى مستودعك
+      - name: Commit and push changes
+        run: |
+          cd mine
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions-bot@github.com"
+          
+          # التحقق مما إذا كانت هناك أي تغييرات (ملفات جديدة، محذوفة، أو معدلة)
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Changes detected. Committing and pushing..."
+            git add .
+            git commit -m "Sync with upstream: ${{ github.event.inputs.upstream_repo }}"
+            
+            # الدفع إلى الفرع الرئيسي (main) في مستودعك
+            git push https://x-access-token:${{ github.event.inputs.pat }}@github.com/${{ github.repository }}.git HEAD:main
+            echo "✅ Repository successfully synced."
+          else
+            echo "✅ No changes to sync. Your repository is already up-to-date."
+          fi
