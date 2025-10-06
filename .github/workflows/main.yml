@@ -26,7 +26,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2 coreutils
           sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Download and Prepare Workspace
@@ -54,6 +54,7 @@ jobs:
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
           echo "CC=clang" >> $GITHUB_ENV
+          # Prepend the toolchain path to the existing PATH
           echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
       - name: Configure, Patch, and Integrate
@@ -74,6 +75,9 @@ jobs:
         run: |
           echo "--- Starting The Main Build using the official script ---"
           chmod +x build_kernel.sh
+          # *** THE FINAL FIX: Ensure the system PATH is preserved ***
+          # The build script overwrites the PATH. We explicitly add the system paths back.
+          export PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
           ./build_kernel.sh
 
       - name: Repack and Upload Final Artifact
