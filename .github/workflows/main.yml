@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The Smart Way
+name: Build A15 Kernel - The Final, Smartest Way
 
 on:
   workflow_dispatch:
@@ -37,13 +37,14 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # Clone AND BUILD Magisk tools (mkbootimg) - THE FINAL, CORRECT WAY
-          git clone https://github.com/topjohnwu/Magisk.git -b master --depth 1 mkbootimg
-          (cd mkbootimg && ./build.sh -t)
+          # *** THE REAL FIX: Download a pre-built, working magiskboot binary ***
+          mkdir -p tools
+          curl -L -o tools/magiskboot "https://github.com/xiaoxindada/magiskboot-aarch64/releases/latest/download/magiskboot"
+          chmod +x tools/magiskboot
           
-          # Extract Ramdisk from stock boot.img
+          # Extract Ramdisk from stock boot.img using the pre-built tool
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
-          ./mkbootimg/build/tools/magiskboot unpack stock_boot.img
+          ./tools/magiskboot unpack stock_boot.img
           mv ramdisk.cpio ramdisk.cpio.gz
           gzip -d ramdisk.cpio.gz
           lz4 ramdisk.cpio gki-ramdisk.lz4
@@ -81,11 +82,11 @@ jobs:
           # Generate the main build config
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Define the magic build options
+          # Define the magic build options, now using the pre-built tool
           export GKI_KERNEL_BUILD_OPTIONS="
               SKIP_MRPROPER=1
               BUILD_BOOT_IMG=1
-              MKBOOTIMG_PATH=$(pwd)/mkbootimg/build/tools/magiskboot
+              MKBOOTIMG_PATH=$(pwd)/tools/magiskboot
               KERNEL_BINARY=Image.gz
               BOOT_IMAGE_HEADER_VERSION=4
               SKIP_VENDOR_BOOT=1
