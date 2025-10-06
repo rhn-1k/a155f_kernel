@@ -1,4 +1,4 @@
-name: Build A15 Kernel (poqdavid Exact Method - Final)
+name: Build A15 Kernel (poqdavid Exact Method - Final + SuSFS)
 
 on:
   workflow_dispatch:
@@ -72,7 +72,7 @@ jobs:
           DEFCONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
           chmod +x $CONFIG_SCRIPT
           
-          # THIS IS OUR RECOVERY BOOT PATCH
+          # Recovery boot patch
           RECOVERY_PATCH_TARGET="kernel-5.10/drivers/power/reset/reboot-mode.c"
           if [ -f "$RECOVERY_PATCH_TARGET" ]; then
             sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' "$RECOVERY_PATCH_TARGET"
@@ -82,17 +82,21 @@ jobs:
           # Disable Samsung Protections
           ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
           
-          # Enable KernelSU
+          # Enable KernelSU and SuSFS
           ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val KSU y
+          ./$CONFIG_SCRIPT --file $DEFCONFIG_FILE --set-val SUSFS y
 
           # Add custom version
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
 
-          # 2. Integrate KernelSU
-          echo "Setting up KernelSU..."
+          # 2. Integrate KernelSU and SuSFS
+          echo "Setting up KernelSU and SuSFS..."
           cd kernel-5.10
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -
+          git clone https://github.com/KernelSU-Next/SuSFS.git --depth=1 susfs
+          git apply --directory="susfs" --no-index susfs/ksu.patch
+          rm -rf susfs
           
           # 3. Generate build config
           echo "Generating build config..."
