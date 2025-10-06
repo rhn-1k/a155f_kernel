@@ -10,7 +10,7 @@ on:
         description: 'AOSP Clang Toolchain URL (.tar.gz)'
         required: true
       STOCK_BOOT_IMG_URL:
-        description: 'Stock boot.img URL (Used for Ramdisk Extraction)'
+        description: 'Stock boot.img URL (Raw image)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -33,25 +33,21 @@ jobs:
         id: workspace
         run: |
           echo "--- Preparing Workspace ---"
-          # Download and extract Samsung Kernel Source
           curl -L -o source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # *** THE ULTIMATE, FINAL FIX: Use the EXACT, DIRECT magiskboot binary URL you provided ***
           mkdir -p tools
           curl -L -o tools/magiskboot "https://github.com/poqdavid/android_kernel_samsung_sma155f/raw/refs/heads/kernelsu/scripts/bin/magiskboot"
           chmod +x tools/magiskboot
           
-          # Clone the OFFICIAL Google mkbootimg tool for the final build step
           git clone https://android.googlesource.com/platform/system/tools/mkbootimg --depth=1
           
-          # Extract Ramdisk from stock boot.img using the developer's own tool
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
           ./tools/magiskboot unpack stock_boot.img
+          
           mv ramdisk.cpio ramdisk.cpio.gz
           gzip -d ramdisk.cpio.gz
-          lz4 ramdisk.cpio gki-ramdisk.lz4
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
@@ -70,64 +66,44 @@ jobs:
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
           echo "--- Patching and Configuring Kernel ---"
-          # Recovery Boot Patch
           sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' drivers/power/reset/reboot-mode.c
-          
-          # Defconfig modifications
           chmod +x scripts/config
           DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
           ./scripts/config --file $DEFCONFIG_FILE --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
           ./scripts/config --file $DEFCONFIG_FILE --set-val KSU y
-          
-          # Custom Version
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
-
-          # KernelSU Setup
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Build The Kernel (The 100% Correct Method)
+      - name: Build The Kernel
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
           echo "--- Starting The Main Build ---"
-          # Generate the main build config
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Define the build options, using the OFFICIAL mkbootimg.py path
-          export GKI_KERNEL_BUILD_OPTIONS="
-              SKIP_MRPROPER=1
-              BUILD_BOOT_IMG=1
-              MKBOOTIMG_PATH=$(pwd)/mkbootimg/mkbootimg.py
-              KERNEL_BINARY=Image.gz
-              BOOT_IMAGE_HEADER_VERSION=4
-              SKIP_VENDOR_BOOT=1
-              GKI_RAMDISK_PREBUILT_BINARY=$(pwd)/gki-ramdisk.lz4
-              LTO=thin
-          "
-          
-          # Set the rest of the environment
           export PLATFORM_VERSION=12
           export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
           export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
           export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
           export MERGE_CONFIG="$(pwd)/kernel-5.10/scripts/kconfig/merge_config.sh"
           
-          # Run the build
           cd kernel
-          env ${GKI_KERNEL_BUILD_OPTIONS} ./build/build.sh
+          ./build/build.sh
 
-      - name: Upload Final boot.img
+      - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Preparing and Uploading Artifact ---"
-          BOOT_IMG_PATH="out/target/product/a15/obj/KERNEL_OBJ/boot.img"
-          if [ ! -f "$BOOT_IMG_PATH" ]; then
-             echo "Error: Final boot.img not found!"
-             exit 1
-          fi
+          echo "--- Repacking Final Image (The poqdavid Method) ---"
+          # Copy the new kernel over the old one
+          cp out/target/product/a15/obj/KERNEL_OBJ/kernel-5.10/arch/arm64/boot/Image.gz kernel
           
-          mv $BOOT_IMG_PATH "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img"
-          FILE_PATH=$(realpath "Patched-boot-A15-${{ github.event.inputs.YOUR_NAME }}.img")
+          # Repack the boot.img with the new kernel, creating a new vbmeta in the process
+          ./tools/magiskboot repack --vbmeta vbmeta.img stock_boot.img new_boot.img
+          
+          # Create the final Odin flashable tar
+          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" new_boot.img vbmeta.img
+          
+          FILE_PATH=$(realpath "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
           
@@ -138,5 +114,5 @@ jobs:
           fi
           
           echo "----------------------------------------------------------------"
-          echo "Build successful. Download your flashable boot.img here: $DOWNLOAD_PAGE"
+          echo "Build successful. Download your flashable Odin tar here: $DOWNLOAD_PAGE"
           echo "----------------------------------------------------------------"
