@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The Final, Proven Method
+name: Build A15 Kernel - The True, Final Method
 
 on:
   workflow_dispatch:
@@ -8,9 +8,6 @@ on:
         required: true
       TOOLCHAIN_URL:
         description: 'AOSP Clang Toolchain URL (.tar.gz)'
-        required: true
-      STOCK_BOOT_IMG_URL:
-        description: 'Stock boot.img URL (Used as a template)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -37,11 +34,13 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          mkdir -p tools
-          curl -L -o tools/magiskboot "https://github.com/poqdavid/android_kernel_samsung_sma155f/raw/refs/heads/kernelsu/scripts/bin/magiskboot"
-          chmod +x tools/magiskboot
+          # Get the tools the developer ACTUALLY uses: a pre-made build.config and mkbootimg.py
+          git clone https://android.googlesource.com/platform/system/tools/mkbootimg --depth=1
+          mkdir -p oem_prebuilt_images
+          curl -L -o oem_prebuilt_images/gki-ramdisk.lz4 "https://github.com/ravindu644/android_kernel_a165f/raw/main/oem_prebuilt_images/gki-ramdisk.lz4"
           
-          curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
+          # *** THE REAL FIX: Get a working build.config instead of generating a broken one ***
+          curl -L -o build.config "https://raw.githubusercontent.com/poqdavid/android_kernel_samsung_sma155f/kernelsu/build.config"
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
@@ -69,31 +68,43 @@ jobs:
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Build The Kernel (The True Developer Sequence)
+      - name: Build The Kernel (The True, Final Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Starting The Main Build using the correct sequence ---"
+          echo "--- Starting The Main Build (The True, Final Method) ---"
           
-          # This block mimics the official build_kernel.sh script EXACTLY
-          cd kernel-5.10
-          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
+          # Step 1: Create the output directory and place the working build.config there
+          mkdir -p out/target/product/a15/obj/KERNEL_OBJ
+          cp build.config out/target/product/a15/obj/KERNEL_OBJ/
           
+          # Step 2: Define all environment variables, exactly as the developer does
           export PLATFORM_VERSION=12
-          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="$(pwd)/out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          cd ../kernel
-          ./build/build.sh
+          # These are the magic GKI options from the developer's script
+          export GKI_KERNEL_BUILD_OPTIONS="
+              SKIP_MRPROPER=1
+              BUILD_BOOT_IMG=1
+              MKBOOTIMG_PATH=$(pwd)/mkbootimg/mkbootimg.py
+              KERNEL_BINARY=Image.gz
+              BOOT_IMAGE_HEADER_VERSION=4
+              SKIP_VENDOR_BOOT=1
+              GKI_RAMDISK_PREBUILT_BINARY=$(pwd)/oem_prebuilt_images/gki-ramdisk.lz4
+              LTO=thin
+          "
+          
+          # Step 3: Run the build from inside the 'kernel' directory
+          cd kernel
+          env ${GKI_KERNEL_BUILD_OPTIONS} ./build/build.sh
 
-      - name: Repack and Upload Final Artifact
+      - name: Package and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Repacking Final Image ---"
-          ./tools/magiskboot unpack stock_boot.img
-          cp out/target/product/a15/obj/KERNEL_OBJ/kernel-5.10/arch/arm64/boot/Image.gz kernel
-          ./tools/magiskboot repack stock_boot.img new_boot.img
-          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" new_boot.img
+          echo "--- Packaging Final Image ---"
+          cp out/target/product/a15/obj/KERNEL_OBJ/boot.img .
+          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" boot.img
           
           FILE_PATH=$(realpath "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
