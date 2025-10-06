@@ -23,17 +23,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Quickly Free Up Disk Space
-        run: |
-          echo "Initial free space:"
-          df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/android
-          sudo rm -rf /usr/local/lib/android
-          echo "Free space after cleaning:"
-          df -h
-
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -58,6 +47,13 @@ jobs:
           fi
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
+      - name: Checkout KernelSU-Next Repository
+        uses: actions/checkout@v4
+        with:
+          repository: KernelSU-Next/KernelSU-Next
+          path: KernelSU-Next
+          fetch-depth: 1
+
       - name: Setup Toolchain
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
@@ -69,9 +65,20 @@ jobs:
           echo "CC=clang" >> $GITHUB_ENV
           echo "PATH=$(realpath toolchain/bin):$PATH" >> $GITHUB_ENV
 
-      - name: Configure, Patch, and Integrate
+      - name: Configure, Patch, and Integrate (Official Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
+          # Step 1: Manually integrate KernelSU-Next source
+          echo "Integrating KernelSU-Next source code..."
+          ln -sf ${{ github.workspace }}/KernelSU-Next/kernel ${{ github.workspace }}/kernel-5.10/drivers/kernelsu
+          
+          DRIVER_MAKEFILE="drivers/Makefile"
+          DRIVER_KCONFIG="drivers/Kconfig"
+          grep -q "kernelsu" "$DRIVER_MAKEFILE" || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> "$DRIVER_MAKEFILE"
+          grep -q "kernelsu" "$DRIVER_KCONFIG" || sed -i '/endmenu/i\\source \"drivers/kernelsu/Kconfig\"' "$DRIVER_KCONFIG"
+          echo "KernelSU-Next integrated."
+
+          # Step 2: Apply patches and configs
           echo "Modifying configs and applying patches..."
           CONFIG_SCRIPT="scripts/config"
           DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
@@ -89,12 +96,6 @@ jobs:
 
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
-
-          echo "Setting up KernelSU and SuSFS..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash -
-          git clone https://github.com/KernelSU-Next/SuSFS.git --depth=1 susfs
-          git apply --directory="susfs" --no-index susfs/ksu.patch
-          rm -rf susfs
 
       - name: Build The Kernel (Samsung Official Method for A15)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
