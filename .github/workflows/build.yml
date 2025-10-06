@@ -3,6 +3,11 @@ name: Build and Upload A155F Kernel
 on:
   workflow_dispatch:
     inputs:
+      TOOLCHAIN_URL:
+        description: 'URL of the toolchain .tar.gz file'
+        required: true
+        default: 'https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz'
+        type: string
       DEVELOPER_NAME:
         description: 'Your name, to be appended to the kernel version (e.g., rhn-1k)'
         required: true
@@ -20,12 +25,16 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
 
-      - name: Setup Toolchain
+      - name: Download and Extract Toolchain
         run: |
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+          echo "Downloading toolchain from ${{ github.event.inputs.TOOLCHAIN_URL }}"
+          curl -LO "${{ github.event.inputs.TOOLCHAIN_URL }}"
+          FILE_NAME=$(basename "${{ github.event.inputs.TOOLCHAIN_URL }}")
+          tar -xf "$FILE_NAME"
+          rm "$FILE_NAME"
+          echo "Toolchain is ready."
 
       - name: Apply Custom Recovery Reboot Patch
         run: |
