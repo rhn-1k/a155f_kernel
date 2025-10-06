@@ -23,20 +23,25 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Maximize Build Space (Fast Method)
-        uses: easimon/maximize-build-space@master
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
         with:
-          root-reserve-mb: 512
-          swap-size-mb: 16384
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
+          swap-size-gb: 16
 
-      - name: Install Build Dependencies
+      - name: Install Build Dependencies (BEFORE CLEANING)
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python2
           sudo ln -sf /usr/bin/python2 /usr/bin/python
+
+      - name: Maximize Build Space (AFTER INSTALLING DEPS)
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          swap-size-mb: 0 # Swap is already set
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
 
       - name: Download and Extract Kernel Source
         id: workspace
@@ -72,7 +77,6 @@ jobs:
       - name: Configure, Patch, and Integrate (Official Method)
         working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
         run: |
-          # Step 1: Manually integrate KernelSU-Next source
           echo "Integrating KernelSU-Next source code..."
           ln -sf ${{ github.workspace }}/KernelSU-Next/kernel ${{ github.workspace }}/kernel-5.10/drivers/kernelsu
           
@@ -82,7 +86,6 @@ jobs:
           grep -q "kernelsu" "$DRIVER_KCONFIG" || sed -i '/endmenu/i\\source \"drivers/kernelsu/Kconfig\"' "$DRIVER_KCONFIG"
           echo "KernelSU-Next integrated."
 
-          # Step 2: Apply patches and configs
           echo "Modifying configs and applying patches..."
           CONFIG_SCRIPT="scripts/config"
           DEFCONFIG_FILE="arch/arm64/configs/a15_00_defconfig"
