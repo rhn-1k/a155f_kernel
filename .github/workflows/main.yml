@@ -37,9 +37,11 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
-          # Clone AND BUILD Magisk tools (mkbootimg)
+          # Clone AND BUILD Magisk tools (mkbootimg) - THE CORRECT WAY
           git clone https://github.com/topjohnwu/Magisk.git -b master --depth 1 mkbootimg
-          (cd mkbootimg && ./build.sh -t)
+          cd mkbootimg
+          ./build.sh -t
+          cd ..
           
           # Extract Ramdisk from stock boot.img
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
