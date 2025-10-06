@@ -83,7 +83,7 @@ jobs:
           fi
           KERNEL_DIR=$(find . -maxdepth 2 -type f -name "build.sh" -printf "%h\n" | xargs dirname)
           echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
-          DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/a15_00_defconfig"
+          DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/a16_00_defconfig"
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}-LKM\"" >> $DEFCONFIG_PATH
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
           $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
