@@ -22,13 +22,7 @@ jobs:
     steps:
       - name: Maximize Build Space by Cleaning Runner
         uses: rokibhasansagar/slimhub_actions@main
-        with:
-          cache: 'false'
-          go: 'false'
-          dotnet: 'true'
-          haskell: 'true'
-          android: 'true'
-          
+        
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -79,24 +73,42 @@ jobs:
             mv $NESTED_DIR/* .
             rm -rf $NESTED_DIR
           fi
+          # Find the main build script directory ('kernel')
           KERNEL_DIR=$(find . -maxdepth 2 -type f -name "build.sh" -printf "%h\n" | xargs dirname)
           echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
-          # Use the correct defconfig for a16
-          DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/a16_00_defconfig"
+          
+          # --- CORRECTED DEFCONFIG PATH ---
+          # The defconfig is inside the kernel source code directory (e.g., kernel-5.10), not the build script directory.
+          KERNEL_SOURCE_DIR=$(find . -maxdepth 2 -type d -name "kernel-5.10")
+          DEFCONFIG_PATH="$KERNEL_SOURCE_DIR/arch/arm64/configs/a16_00_defconfig"
+          
+          echo "Using defconfig at: $DEFCONFIG_PATH"
+          if [ ! -f "$DEFCONFIG_PATH" ]; then
+            echo "Error: Defconfig file not found at the expected path!"
+            exit 1
+          fi
+
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}-LKM\"" >> $DEFCONFIG_PATH
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
-          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
-          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_CUBIC n
-          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val KSU m
-          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val MODULES y
-          $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val MODULE_UNLOAD y
+          
+          # Use the correct path to the 'config' script
+          CONFIG_SCRIPT_PATH="$KERNEL_SOURCE_DIR/scripts/config"
+          
+          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
+          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_CUBIC n
+          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val KSU m
+          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val MODULES y
+          $CONFIG_SCRIPT_PATH --file $DEFCONFIG_PATH --set-val MODULE_UNLOAD y
 
       - name: Build The Kernel
         working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
           export BUILD_CONFIG="out/build.config"
-          # Use the correct defconfig for a16
-          python2 ${{ steps.kernel_source.outputs.kernel_path }}/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
+          # Use the correct path to the 'gen_build_config.py' script
+          KERNEL_SOURCE_DIR=$(find . -maxdepth 2 -type d -name "kernel-5.10")
+          python2 $KERNEL_SOURCE_DIR/scripts/gen_build_config.py --kernel-defconfig a16_00_defconfig -m user -o $BUILD_CONFIG
+          
+          # Run the main build script
           ${{ steps.kernel_source.outputs.kernel_path }}/build/build.sh
 
       - name: Create Flashable ZIP using AnyKernel3
