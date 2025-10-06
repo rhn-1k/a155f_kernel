@@ -58,7 +58,6 @@ jobs:
       - name: Configure, Patch, and Integrate KernelSU
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          # All commands run from the root directory now
           sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' kernel-5.10/drivers/power/reset/reboot-mode.c
           echo "Recovery boot patch applied."
 
@@ -70,27 +69,26 @@ jobs:
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}\"" >> $DEFCONFIG_FILE
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
 
-          echo "Setting up KernelSU (Base)..."
-          # We need to be in the kernel-5.10 directory for setup.sh to work correctly
           (cd kernel-5.10 && curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -)
 
-      - name: Build The Kernel
+      - name: Build The Kernel (The REAL Correct Way)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          # Generate the main build config (from root)
+          # Generate the main build config
           python2 kernel-5.10/scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o out/target/product/a15/obj/KERNEL_OBJ/build.config
           
-          # Set build environment variables (from root)
+          # Set build environment variables using RELATIVE paths
           export PLATFORM_VERSION=12
-          export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
+          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
           # Tell the build script to skip 'make mrproper'
           export SKIP_MRPROPER=1
           
-          # Run the build script from the ROOT directory
-          ./kernel/build/build.sh
+          # *** THE FINAL FIX: Change directory to 'kernel' before running the build script ***
+          cd kernel
+          ./build/build.sh
 
       - name: Repack Boot Image and Upload
         working-directory: ${{ steps.workspace.outputs.work_dir }}
