@@ -1,0 +1,49 @@
+name: Mirror Upstream Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repo:
+        description: 'The repository to copy from (e.g., user/repo)'
+        required: true
+        default: 'nillerusr/source-engine'
+      pat:
+        description: 'A Personal Access Token (PAT) with "repo" and "workflow" scopes'
+        required: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      # الخطوة 1: عمل نسخة متطابقة (mirror) من المستودع المصدر
+      # هذا الأمر يقوم بسحب كل شيء: كل الفروع (branches)، كل الوسوم (tags)، وكل سجل التغييرات.
+      - name: Clone the upstream repository as a mirror
+        run: git clone --mirror https://github.com/${{ github.event.inputs.upstream_repo }}.git upstream-mirror
+
+      # الخطوة 2: الدفع (Push) بالنسخة المتطابقة إلى مستودعك
+      # هذا الأمر سيقوم بمسح مستودعك الحالي واستبداله بالكامل بالمحتوى المنسوخ.
+      - name: Force push the mirror to your repository
+        run: |
+          cd upstream-mirror
+          git push --mirror --force https://x-access-token:${{ github.event.inputs.pat }}@github.com/${{ github.repository }}.git
+
+      # الخطوة 3 (اختياري ولكن مهم): مزامنة الوحدات النمطية (Submodules)
+      # بعد أن تم نسخ كل شيء، نحتاج إلى التأكد من أن الوحدات النمطية تعمل.
+      - name: Checkout your repo to update submodules
+        uses: actions/checkout@v4
+        with:
+          token: ${{ github.event.inputs.pat }}
+          submodules: 'recursive' # هذا الخيار يقوم بتهيئة وتحميل الوحدات النمطية
+
+      - name: Commit submodule initialization
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions-bot@github.com"
+          # إذا كان هناك تغييرات في تهيئة الوحدات النمطية، قم بحفظها
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -am "Initialize submodules after mirror"
+            git push
+            echo "Submodules initialized and pushed."
+          else
+            echo "No submodule changes to commit."
+          fi
