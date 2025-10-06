@@ -1,4 +1,4 @@
-name: Build A15 Kernel - The Final, Proven Method
+name: Build A15 Kernel - The True, Simple Method
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
         description: 'AOSP Clang Toolchain URL (.tar.gz)'
         required: true
       STOCK_BOOT_IMG_URL:
-        description: 'Stock boot.img URL (Raw image)'
+        description: 'Stock boot.img URL (Used as a template)'
         required: true
       YOUR_NAME:
         description: 'Your developer name (no spaces)'
@@ -37,17 +37,13 @@ jobs:
           unzip -q source.zip
           tar -xf Kernel.tar.gz
           
+          # Get the developer's own magiskboot tool
           mkdir -p tools
           curl -L -o tools/magiskboot "https://github.com/poqdavid/android_kernel_samsung_sma155f/raw/refs/heads/kernelsu/scripts/bin/magiskboot"
           chmod +x tools/magiskboot
           
-          git clone https://android.googlesource.com/platform/system/tools/mkbootimg --depth=1
-          
+          # Download the stock boot image to be used as a template later
           curl -L -o stock_boot.img "${{ github.event.inputs.STOCK_BOOT_IMG_URL }}"
-          ./tools/magiskboot unpack stock_boot.img
-          
-          mv ramdisk.cpio ramdisk.cpio.gz
-          gzip -d ramdisk.cpio.gz
           
           echo "work_dir=$(realpath .)" >> $GITHUB_OUTPUT
 
@@ -93,15 +89,18 @@ jobs:
       - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Repacking Final Image (The poqdavid Method) ---"
-          # Copy the new kernel over the old one
+          echo "--- Repacking Final Image (The Simple, Correct Method) ---"
+          # Unpack the stock boot image to get its structure
+          ./tools/magiskboot unpack stock_boot.img
+          
+          # Replace the kernel with our newly built one
           cp out/target/product/a15/obj/KERNEL_OBJ/kernel-5.10/arch/arm64/boot/Image.gz kernel
           
-          # Repack the boot.img with the new kernel, creating a new vbmeta in the process
-          ./tools/magiskboot repack --vbmeta vbmeta.img stock_boot.img new_boot.img
+          # Repack the boot image with the new kernel
+          ./tools/magiskboot repack stock_boot.img new_boot.img
           
           # Create the final Odin flashable tar
-          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" new_boot.img vbmeta.img
+          tar -cvf "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar" new_boot.img
           
           FILE_PATH=$(realpath "Patched-Odin-A15-${{ github.event.inputs.YOUR_NAME }}.tar")
           RESPONSE=$(curl -F "file=@${FILE_PATH}" -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" https://upload.gofile.io/uploadFile)
