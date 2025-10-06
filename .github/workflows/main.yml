@@ -9,6 +9,10 @@ on:
       TOOLCHAIN_URL:
         description: 'Direct URL to your toolchain archive (.tar.gz)'
         required: true
+      YOUR_NAME:
+        description: 'Your developer name (no spaces)'
+        required: true
+        default: 'YourName'
 
 jobs:
   build:
@@ -38,9 +42,7 @@ jobs:
       - name: Download and Setup Toolchain
         working-directory: ${{ steps.setup.outputs.workspace_path }}/prebuilts
         run: |
-          echo "Downloading toolchain from ${{ github.event.inputs.TOOLCHAIN_URL }}"
           curl -L -o toolchain.tar.gz "${{ github.event.inputs.TOOLCHAIN_URL }}"
-          echo "Extracting toolchain..."
           tar -xf toolchain.tar.gz
 
       - name: Setup Kernel Build Environment
@@ -51,27 +53,26 @@ jobs:
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
           echo "CROSS_COMPILE_COMPAT=arm-linux-gnueabi-" >> $GITHUB_ENV
           echo "LTO=thin" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_USER=${{ github.event.inputs.YOUR_NAME }}" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_HOST=GitHub-Actions" >> $GITHUB_ENV
 
-      - name: Download, Extract, and Fix Kernel Source Structure
+      - name: Download, Prepare, and Personalize Kernel Source
         id: kernel_source
         working-directory: ${{ steps.setup.outputs.workspace_path }}
         run: |
-          # Download the original archive
           curl -L -o kernel_source.zip "${{ github.event.inputs.KERNEL_SOURCE_URL }}"
-          # Extract it
-          unzip kernel_source.zip
-          # Find the unwanted nested directory
+          unzip -q kernel_source.zip
           NESTED_DIR=$(find . -mindepth 1 -maxdepth 1 -type d)
-          # Move all contents from the nested directory up to the current level
           if [ -d "$NESTED_DIR" ]; then
-            echo "Nested directory found: $NESTED_DIR. Moving contents up."
             mv $NESTED_DIR/* .
             rm -rf $NESTED_DIR
           fi
-          # Now the structure is clean, find the main kernel directory
           KERNEL_DIR=$(find . -maxdepth 2 -type f -name "build.sh" -printf "%h\n" | xargs dirname)
           echo "kernel_path=$(realpath $KERNEL_DIR)" >> $GITHUB_OUTPUT
           DEFCONFIG_PATH="$KERNEL_DIR/arch/arm64/configs/a15_00_defconfig"
+          # Add Your Name to the Kernel Version
+          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.YOUR_NAME }}-LKM\"" >> $DEFCONFIG_PATH
+          echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_PATH
           # Apply critical defconfig modifications
           $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n
           $KERNEL_DIR/scripts/config --file $DEFCONFIG_PATH --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_CUBIC n
@@ -93,13 +94,12 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
           cp out/dist/Image.gz anykernel/
-          # Find and copy the KernelSU module
           KSU_MODULE=$(find out/dist -name "ksu.ko")
           if [ -f "$KSU_MODULE" ]; then
             cp $KSU_MODULE anykernel/
           fi
           cd anykernel
-          ZIP_NAME="Your-Kernel-LKM-${{ github.run_id }}.zip"
+          ZIP_NAME="${{ github.event.inputs.YOUR_NAME }}-Kernel-LKM-${{ github.run_id }}.zip"
           zip -r9 ../$ZIP_NAME * -x .git README.md *placeholder
           echo "zip_path=$(realpath ../$ZIP_NAME)" >> $GITHUB_OUTPUT
 
@@ -114,5 +114,5 @@ jobs:
           fi
           echo "----------------------------------------------------------------"
           echo "File uploaded successfully!"
-          echo "Your LKM Kernel is ready: $DOWNLOAD_PAGE"
+          echo "Your Kernel, built by you, is ready: $DOWNLOAD_PAGE"
           echo "----------------------------------------------------------------"
