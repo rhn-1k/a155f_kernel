@@ -377,7 +377,6 @@ static int sm5714_vbus_adc_read(void *_data)
 static void sm5714_process_cc_water_det(void *data, int state)
 {
 	struct sm5714_phydrv_data *pdic_data = data;
-	struct i2c_client *i2c = pdic_data->i2c;
 
 	sm5714_pdic_event_work(pdic_data,
 #if IS_ENABLED(CONFIG_BATTERY_NOTIFIER)
@@ -387,71 +386,7 @@ static void sm5714_process_cc_water_det(void *data, int state)
 #endif
 			PDIC_NOTIFY_ID_WATER, state/*attach*/,
 			USB_STATUS_NOTIFY_DETACH, 0);
-	if (state == WATER_MODE_OFF)
-		sm5714_usbpd_write_reg(i2c, SM5714_REG_CORR_CNTL9, 0x10);
-
 	sm5714_info("%s, water state : %d\n", __func__, state);
-}
-
-static void sm5714_check_hiccup_ta(struct work_struct *work)
-{
-	struct sm5714_phydrv_data *pdic_data = container_of(work,
-			struct sm5714_phydrv_data, hiccup_ta_work.work);
-	struct i2c_client *i2c = pdic_data->i2c;
-	u8 status3 = 0;
-
-	sm5714_usbpd_read_reg(i2c, SM5714_REG_STATUS3, &status3);
-	sm5714_info("%s, STATUS3 = 0x%x\n", __func__, status3);
-
-	if (status3 & SM5714_REG_INT_STATUS3_WATER_RLS)
-		return;
-
-	if (pdic_data->vbus_noti_status == STATUS_VBUS_HIGH)
-		sm5714_usbpd_write_reg(i2c, SM5714_REG_CORR_CNTL9, 0x00);
-}
-
-static void sm5714_check_water_pd_ta(struct work_struct *work)
-{
-	struct sm5714_phydrv_data *pdic_data = container_of(work,
-			struct sm5714_phydrv_data, wat_pd_ta_work.work);
-	struct i2c_client *i2c = pdic_data->i2c;
-	u8 adc_cc1 = 0, adc_cc2 = 0, status3 = 0;
-	int retry = 0;
-	bool is_waterTA = true;
-
-	sm5714_usbpd_read_reg(i2c, SM5714_REG_STATUS3, &status3);
-	sm5714_info("%s, STATUS3 = 0x%x\n", __func__, status3);
-
-	if (status3 & SM5714_REG_INT_STATUS3_WATER_RLS)
-		return;
-	else if (pdic_data->vbus_noti_status == STATUS_VBUS_HIGH)
-		return;
-
-	for (retry = 0; retry < 3; retry++) {
-		if (retry > 0)
-			msleep(100);
-		sm5714_usbpd_write_reg(i2c, SM5714_REG_ADC_CNTL1, SM5714_ADC_PATH_SEL_CC1);
-		sm5714_adc_value_read(pdic_data, &adc_cc1);
-
-		sm5714_usbpd_write_reg(i2c, SM5714_REG_ADC_CNTL1, SM5714_ADC_PATH_SEL_CC2);
-		sm5714_adc_value_read(pdic_data, &adc_cc2);		
-		sm5714_info("%s, CC1 : 0x%x, CC2 : 0x%x\n", __func__, adc_cc1, adc_cc2);
-
-		if ((adc_cc1 >= 0x3C) || (adc_cc2 >= 0x3C)) {
-			is_waterTA = true;
-		} else {
-			is_waterTA = false;
-			break;
-		}
-	}
-
-	if (is_waterTA) {
-		/* TODO: AP noti for alarm popup */
-		sm5714_pdic_event_work(pdic_data, PDIC_NOTIFY_DEV_MUIC, PDIC_NOTIFY_ID_WATER_CABLE, 1, 0, 0);
-		if (pdic_data->vbus_noti_status == STATUS_VBUS_HIGH)
-			sm5714_usbpd_write_reg(i2c, SM5714_REG_CORR_CNTL9, 0x00);
-	} else
-		sm5714_usbpd_write_reg(i2c, SM5714_REG_CORR_CNTL9, 0x10);
 }
 #endif
 
@@ -668,17 +603,11 @@ static void sm5714_check_cc_state(struct sm5714_phydrv_data *pdic_data)
 			__func__, data, reg_jig, reg_comp, reg_clk);
 
 	if (abnormal_st) {
-		if (pdic_data->sw_reset_cnt > 2) {
-			sm5714_err("%s : sm5714 usbpd i2c error!!\n", __func__);
-			return;
-		}
 		dev_info(dev, "Do soft reset.\n");
-		pdic_data->sw_reset_cnt++;
 		sm5714_usbpd_write_reg(i2c, SM5714_REG_SYS_CNTL, 0x80);
 		sm5714_driver_reset(pd_data);
 		sm5714_usbpd_reg_init(pdic_data);
-	} else
-		pdic_data->sw_reset_cnt = 0;
+	}
 }
 
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
@@ -1539,10 +1468,6 @@ void sm5714_pdic_event_work(void *data, int dest,
 #if defined(CONFIG_TYPEC)
 	struct typec_partner_desc desc = {0};
 	enum typec_pwr_opmode mode = TYPEC_PWR_MODE_USB;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-	struct typec_displayport_data dp_data = {0};
-	struct typec_mux_state state = {.mode = 0, .data = &dp_data};
-#endif
 #endif
 
 	sm5714_info("%s : usb: DIAES %d-%d-%d-%d-%d\n",
@@ -1626,35 +1551,6 @@ void sm5714_pdic_event_work(void *data, int dest,
 				sm5714_info("%s : detach case\n", __func__);
 		}
 	}
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-	if (dest == PDIC_NOTIFY_DEV_DP && id == PDIC_NOTIFY_ID_DP_LINK_CONF) {
-		switch (attach) {
-		case 1:
-			dp_data.conf = BIT(DP_PIN_ASSIGN_A);
-			break;
-		case 2:
-			dp_data.conf = BIT(DP_PIN_ASSIGN_B);
-			break;
-		case 3:
-			dp_data.conf = BIT(DP_PIN_ASSIGN_C);
-			break;
-		case 4:
-			dp_data.conf = BIT(DP_PIN_ASSIGN_D);
-			break;
-		case 5:
-			dp_data.conf = BIT(DP_PIN_ASSIGN_E);
-			break;
-		case 6:
-			dp_data.conf = BIT(DP_PIN_ASSIGN_F);
-			break;
-		default:
-			dp_data.conf = BIT(DP_PIN_ASSIGN_D);
-			break;
-		}
-		typec_mux_set(usbpd_data->mux, &state);
-	}
-#endif
 #endif
 	if (!queue_work(usbpd_data->pdic_wq, &event_work->pdic_work)) {
 		sm5714_info("usb: %s, event_work(%p) is dropped\n",
@@ -2064,22 +1960,6 @@ static void sm5714_usbpd_wait_entermode(void *data, int on)
 		wake_up_interruptible(&usbpd_data->host_turn_on_wait_q);
 	}
 }
-
-static void sm5714_water_pd_ta_notify(void *data)
-{
-	struct sm5714_phydrv_data *usbpd_data = data;
-
-	if (!usbpd_data)
-		return;
-
-#if defined(CONFIG_SM5714_WATER_DETECTION_ENABLE)
-	if (usbpd_data->is_water_detect) {
-		cancel_delayed_work_sync(&usbpd_data->wat_pd_ta_work);
-		schedule_delayed_work(&usbpd_data->wat_pd_ta_work,
-				msecs_to_jiffies(0));
-	}
-#endif
-}
 #endif
 
 static int sm5714_write_msg_header(struct i2c_client *i2c, u8 *buf)
@@ -2307,10 +2187,8 @@ void sm5714_src_transition_to_default(void *_data)
 	sm5714_usbpd_write_reg(i2c, SM5714_REG_PD_CNTL2, val); /* BIST Off */
 
 	sm5714_set_vconn_source(data, USBPD_VCONN_OFF);
-#if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
 	if (pdic_data->vbus_noti_status == STATUS_VBUS_HIGH && !pdic_data->is_otg_vboost)
 		sm5714_usbpd_turn_off_reverse_booster(data);
-#endif
 
 	sm5714_vbus_turn_on_ctrl(pdic_data, 0);
 	if (manager->dp_is_connect == 1) {
@@ -2471,7 +2349,7 @@ static void sm5714_usbpd_check_normal_otg_device(struct sm5714_phydrv_data *pdic
 			break;
 	}
 	if (reg_data != 0x00)
-		sm5714_err("%s : sm5714 usbpd i2c error!!\n", __func__);
+		panic("sm5714 usbpd i2c error!!");
 	if ((cc1_80ua >= 0xC) && (cc1_80ua <= 0x16) && (cc1_fe < 0x4))
 		abnormal_st = true;
 	else if ((cc2_80ua >= 0xC) && (cc2_80ua <= 0x16) && (cc2_fe < 0x4))
@@ -2668,13 +2546,6 @@ static bool sm5714_poll_status(void *_data, int irq)
 					PDIC_NOTIFY_DEV_MUIC, PDIC_NOTIFY_ID_RID,
 					pdic_data->rid/*rid*/, USB_STATUS_NOTIFY_DETACH, 0);
 		}
-#if defined(CONFIG_SM5714_WATER_DETECTION_ENABLE)
-		if (pdic_data->is_water_detect && !is_lpcharge_pdic_param()) {
-			cancel_delayed_work_sync(&pdic_data->hiccup_ta_work);
-			schedule_delayed_work(&pdic_data->hiccup_ta_work,
-					msecs_to_jiffies(5000));
-		}
-#endif
 	}
 
 #if defined(CONFIG_SM5714_WATER_DETECTION_ENABLE)
@@ -2683,7 +2554,6 @@ static bool sm5714_poll_status(void *_data, int irq)
 				(irq != (-1)) && pdic_data->is_water_detect && !is_lpcharge_pdic_param()) {
 			pdic_data->is_water_detect = false;
 			sm5714_process_cc_water_det(pdic_data, WATER_MODE_OFF);
-			cancel_delayed_work_sync(&pdic_data->hiccup_ta_work);
 		}
 	}
 #endif
@@ -3316,7 +3186,6 @@ struct usbpd_ops ops_usbpd = {
 	.usbpd_set_host_on = sm5714_usbpd_set_host_on,
 	.usbpd_wait_entermode = sm5714_usbpd_wait_entermode,
 	.usbpd_cc_control_command = sm5714_cc_control_command,
-	.usbpd_water_pd_ta_notify = sm5714_water_pd_ta_notify,
 };
 #endif
 
@@ -3618,13 +3487,6 @@ static int sm5714_usbpd_notify_attach(void *data)
 		return -1;
 	}
 
-#if defined(CONFIG_TYPEC)
-	if (reg_data & SM5714_CABLE_FLIP)
-		typec_set_orientation(pdic_data->port, TYPEC_ORIENTATION_REVERSE);
-	else
-		typec_set_orientation(pdic_data->port, TYPEC_ORIENTATION_NORMAL);
-#endif
-
 	pdic_data->detach_valid = false;
 
 	return ret;
@@ -3724,7 +3586,6 @@ static void sm5714_usbpd_notify_detach(void *data)
 		pdic_data->typec_try_state_change = TRY_ROLE_SWAP_NONE;
 		complete(&pdic_data->typec_reverse_completion);
 	}
-	typec_set_orientation(pdic_data->port, TYPEC_ORIENTATION_NONE);
 #endif
 #if defined(CONFIG_USB_HOST_NOTIFY)
 	if (o_notify) {
@@ -3980,8 +3841,6 @@ static int sm5714_usbpd_reg_init(struct sm5714_phydrv_data *_data)
 	sm5714_check_cc_state(_data);
 	/* Release SBU Sourcing */
 	sm5714_usbpd_write_reg(i2c, SM5714_REG_CORR_CNTL5, 0x00);
-	/* TEST.PD.PHY.ALL.5 Receiver Interference Rejection */
-	sm5714_usbpd_write_reg(i2c, 0x3D, 0xEE);
 #if defined(CONFIG_SM5714_WATER_DETECTION_ENABLE)
 	sm5714_abnormal_dev_int_on_off(_data, 1);
 	sm5714_usbpd_write_reg(i2c, 0xEF, 0x20);
@@ -4292,8 +4151,6 @@ static int sm5714_usbpd_probe(struct i2c_client *i2c,
 #endif
 #if IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
 	u8 reg_data = 0;
-#else
-	struct sm5714_usbpd_data *pd_data;
 #endif
 
 	sm5714_info("%s start\n", __func__);
@@ -4328,16 +4185,6 @@ static int sm5714_usbpd_probe(struct i2c_client *i2c,
 		dev_err(dev, "failed on usbpd_init\n");
 		goto err_kfree1;
 	}
-
-#if !IS_ENABLED(CONFIG_BATTERY_SAMSUNG)
-	pd_data = kzalloc( sizeof(struct sm5714_usbpd_data), GFP_KERNEL);
-	if (!pd_data)
-		return -ENOMEM;
-
-	pd_data->dev = dev;
-	pd_data->phy_driver_data = pdic_data;
-	dev_set_drvdata(dev, pd_data);
-#endif
 
 	sm5714_usbpd_read_reg(i2c, SM5714_REG_FACTORY, &rid);
 
@@ -4384,7 +4231,6 @@ static int sm5714_usbpd_probe(struct i2c_client *i2c,
 	pdic_data->is_timer_expired = false;
 	pdic_data->is_wait_sinktxok = false;
 	pdic_data->reset_done = 0;
-	pdic_data->sw_reset_cnt = 0;
 	pdic_data->cc_open_cmd = 0;
 	pdic_data->abnormal_dev_cnt = 0;
 	pdic_data->scr_sel = PLUG_CTRL_RP80;
@@ -4423,10 +4269,6 @@ static int sm5714_usbpd_probe(struct i2c_client *i2c,
 #endif
 #if IS_ENABLED(CONFIG_VBUS_NOTIFIER)
 	INIT_DELAYED_WORK(&pdic_data->vbus_noti_work, sm5714_usbpd_handle_vbus);
-#endif
-#if defined(CONFIG_SM5714_WATER_DETECTION_ENABLE)
-	INIT_DELAYED_WORK(&pdic_data->wat_pd_ta_work, sm5714_check_water_pd_ta);
-	INIT_DELAYED_WORK(&pdic_data->hiccup_ta_work, sm5714_check_hiccup_ta);
 #endif
 	INIT_DELAYED_WORK(&pdic_data->muic_noti_work,
 			sm5714_usbpd_delayed_muic_notify);
@@ -4529,7 +4371,6 @@ static int sm5714_usbpd_probe(struct i2c_client *i2c,
 	pdic_data->typec_cap.ops = &sm5714_typec_ops;
 #endif
 	pdic_data->typec_cap.type = TYPEC_PORT_DRP;
-	pdic_data->typec_cap.fwnode = dev->fwnode;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	pdic_data->typec_cap.data = TYPEC_PORT_DRD;
 #endif
@@ -4543,9 +4384,6 @@ static int sm5714_usbpd_probe(struct i2c_client *i2c,
 	else
 		sm5714_info("%s : success typec_register_port\n", __func__);
 	init_completion(&pdic_data->typec_reverse_completion);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-	pdic_data->mux = typec_mux_get(pdic_data->dev, NULL);
-#endif
 #endif
 #if defined(CONFIG_USB_HOST_NOTIFY)
 	if (o_notify)
@@ -4608,10 +4446,6 @@ static int sm5714_usbpd_suspend(struct device *dev)
 		sm5714_usbpd_write_reg(pdic_data->i2c, SM5714_REG_GEN_TMR_L, 0x00);
 		sm5714_usbpd_write_reg(pdic_data->i2c, SM5714_REG_GEN_TMR_U, 0x00);
 	}
-#if defined(CONFIG_SM5714_WATER_DETECTION_ENABLE)
-	if (pdic_data->is_water_detect)
-		sm5714_usbpd_write_reg(pdic_data->i2c, SM5714_REG_CORR_CNTL9, 0x10);
-#endif
 
 	cancel_delayed_work_sync(&pdic_data->debug_work);
 
@@ -4660,9 +4494,6 @@ static int sm5714_usbpd_remove(struct i2c_client *i2c)
 		_data->dual_role);
 		devm_kfree(_data->dev, _data->desc);
 #elif defined(CONFIG_TYPEC)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-		typec_mux_put(_data->mux);
-#endif
 		typec_unregister_port(_data->port);
 #endif
 #if IS_ENABLED(CONFIG_PDIC_NOTIFIER)

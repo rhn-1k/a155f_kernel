@@ -30,8 +30,8 @@
 						: GET_DEV_COUNT(mdev) == MULTI_DEV_SUB ? SEC_CLASS_DEVT_TSP2 \
 						: SEC_CLASS_DEVT_TSP)
 #if IS_ENABLED(CONFIG_SEC_ABC)
-#define GET_INT_ABC_TYPE(mdev)		(GET_DEV_COUNT(mdev) == MULTI_DEV_SUB ? SEC_ABC_SEND_EVENT_TYPE_SUB \
-						: SEC_ABC_SEND_EVENT_TYPE)
+#define GET_INT_ABC_TYPE(mdev)    (GET_DEV_COUNT(mdev) == MULTI_DEV_SUB ? SEC_ABC_SEND_EVENT_TYPE_SUB \
+                        : SEC_ABC_SEND_EVENT_TYPE)
 #endif
 
 struct sec_input_multi_device {

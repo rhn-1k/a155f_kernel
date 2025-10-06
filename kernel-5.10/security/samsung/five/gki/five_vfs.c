@@ -18,7 +18,6 @@
 #include <linux/xattr.h>
 #include <linux/uio.h>
 #include "five_vfs.h"
-#include "five_log.h"
 
 /* This function is an alternative implementation of vfs_getxattr_alloc() */
 ssize_t five_getxattr_alloc(struct dentry *dentry, const char *name,
@@ -59,7 +58,7 @@ static ssize_t new_sync_read(struct file *filp, char __user *buf,
 	iov_iter_init(&iter, READ, &iov, 1, len);
 
 	ret = call_read_iter(filp, &kiocb, &iter);
-	FIVE_BUG_ON(ret == -EIOCBQUEUED);
+	BUG_ON(ret == -EIOCBQUEUED);
 	if (ppos)
 		*ppos = kiocb.ki_pos;
 	return ret;

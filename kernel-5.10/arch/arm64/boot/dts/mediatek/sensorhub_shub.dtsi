@@ -25,31 +25,19 @@
 	};
 };
 #endif
-#if 0
-&${gpio_pogo_int_parent} {
-	shub_pogo_int: shub-pogo-int {
-		GPIO_CONFIG_PUD_DRV(${gpio_pogo_int}, FUNC_INPUT_WAKEUP, PULL_NONE, DRV_LV1);
-	};
-};
-#endif
+
 / {
 	fragment@model {
 		target-path = "/";
 		__overlay__ {
 			shub {
 				pinctrl-names = "default";
-#if 0 || 0 || 0
-				pinctrl-0 = <
-#if 0
-				&shub_sensor_ldo_en
-#endif
-#if 0
-				&shub_prox_ldo_en
-#endif
-#if 0
-				&shub_pogo_int
-#endif
->;
+#if 0 && 0
+				pinctrl-0 = <&shub_sensor_ldo_en &shub_prox_ldo_en>;
+#elif 0
+				pinctrl-0 = <&shub_sensor_ldo_en>;
+#elif 0
+				pinctrl-0 = <&shub_prox_ldo_en>;
 #endif
 
 #if 0

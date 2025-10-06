@@ -42,11 +42,7 @@
 #endif
 
 #if defined(CONFIG_MST_TEEGRIS)
-#if defined(CONFIG_TEEGRIS_VERSION) && (CONFIG_TEEGRIS_VERSION == 6)
-#include "../../drivers/tee/tzdev/include/tzdev/tee_client_api.h"
-#else
 #include "../../drivers/misc/tzdev/include/tzdev/tee_client_api.h"
-#endif
 #endif
 
 #if defined(CONFIG_MST_NONSECURE)

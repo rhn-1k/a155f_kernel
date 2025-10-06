@@ -124,7 +124,7 @@ int init_proca_config(struct proca_config *conf,
 {
 	int ret;
 
-	PROCA_BUG_ON(!conf || !proca_table_addr);
+	BUG_ON(!conf || !proca_table_addr);
 
 	prepare_kernel_constants(conf);
 	conf->gaf_addr = proca_gaf_get_addr();

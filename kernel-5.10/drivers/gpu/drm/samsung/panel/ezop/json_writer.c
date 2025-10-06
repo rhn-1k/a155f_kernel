@@ -12,7 +12,6 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include "json_writer.h"
-#include "panel_debug.h"
 
 struct json_writer {
 	char *buf; /* output buffer */
@@ -122,7 +121,7 @@ void jsonw_destroy(json_writer_t **self_p)
 {
 	json_writer_t *self = *self_p;
 
-	PANEL_BUG_ON(self->depth != 0);
+	BUG_ON(self->depth != 0);
 	jsonw_puts(self, "\n");
 	kfree(self);
 	*self_p = NULL;
@@ -135,7 +134,7 @@ void jsonw_pretty(json_writer_t *self, bool on)
 
 void jsonw_reset(json_writer_t *self)
 {
-	PANEL_BUG_ON(self->depth != 0);
+	BUG_ON(self->depth != 0);
 	self->sep = '\0';
 }
 
@@ -150,7 +149,7 @@ static void jsonw_begin(json_writer_t *self, int c)
 
 static void jsonw_end(json_writer_t *self, int c)
 {
-	PANEL_BUG_ON(self->depth <= 0);
+	BUG_ON(self->depth <= 0);
 
 	--self->depth;
 	if (self->sep != '\0')

@@ -13,7 +13,6 @@
  *
  */
 #include "../comm/shub_comm.h"
-#include "../debug/shub_mini_dump.h"
 #include "../sensorhub/shub_device.h"
 #include "../sensormanager/shub_sensor_type.h"
 #include "../utility/shub_dev_core.h"
@@ -115,7 +114,9 @@ static ssize_t operation_mode_store(struct device *dev, struct device_attribute 
 
 ssize_t minidump_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%s\n", get_shub_mini_dump());
+	struct shub_data_t *data = get_shub_data();
+
+	return sprintf(buf, "%s\n", data->mini_dump);
 }
 
 static DEVICE_ATTR(mcu_rev, S_IRUGO, mcu_revision_show, NULL);

@@ -8,12 +8,6 @@
 		charger,main_charger = "sm5714-charger";
 		charger,direct_charger = "sm5461-charger";
 
-	#if 0
-		charger,direct_chargers =
-				"sm5461-charger",
-				"${direct_charger_name2}";
-	#endif
-
 		charger,dchg_min_current = <2000>;
 
 		charger,ta_alert_wa;
@@ -21,7 +15,7 @@
 };
 
 
-/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel/kmodule/battery/suwon/common/sec_direct_charger/dts/a16/sec_direct_charger.dtsi */
+/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel/kmodule/battery/suwon/common/sec_direct_charger/dts/a15/sec_direct_charger.dtsi */
 
 &smd {
 	pass-through {
@@ -30,6 +24,7 @@
 		min_cap = <200>; /* 0.1 % */
 		fixed_sc_cap = <900>; /* 0.1 % */
 		max_icl = <3000>; /* mA */
+		vfloat = <4380>; /* mV */
 	};
 };
 

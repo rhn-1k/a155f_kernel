@@ -11,7 +11,7 @@
 
 #define LPS22DF_NAME   "LPS22DFTR"
 
-static ssize_t pressure_lps22df_temperature_show(char *buf)
+static ssize_t pressure_temperature_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	s32 temperature = 0;
 	s32 float_temperature = 0;
@@ -25,7 +25,7 @@ static ssize_t pressure_lps22df_temperature_show(char *buf)
 	return sprintf(buf, "%d.%02d\n", (temperature / 100), float_temperature);
 }
 
-static ssize_t pressure_lps22df_esn_show(char *buf)
+static ssize_t pressure_esn_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	char *buffer = NULL;
 	int buffer_length = 0;
@@ -46,15 +46,19 @@ static ssize_t pressure_lps22df_esn_show(char *buf)
 	return ret;
 }
 
-struct pressure_factory_chipset_funcs pressure_lps22df_ops = {
-	.temperature_show =pressure_lps22df_temperature_show,
-	.esn_show = pressure_lps22df_esn_show,
+static DEVICE_ATTR(temperature, S_IRUGO, pressure_temperature_show, NULL);
+static DEVICE_ATTR(esn, S_IRUGO, pressure_esn_show, NULL);
+
+static struct device_attribute *pressure_lps22df_attrs[] = {
+	&dev_attr_temperature,
+	&dev_attr_esn,
+	NULL,
 };
 
-struct pressure_factory_chipset_funcs *get_pressure_lps22df_chipset_func(char *name)
+struct device_attribute **get_pressure_lps22df_dev_attrs(char *name)
 {
 	if (strcmp(name, LPS22DF_NAME) != 0)
 		return NULL;
 
-	return &pressure_lps22df_ops;
+	return pressure_lps22df_attrs;
 }

@@ -47,7 +47,7 @@
 	status = "okay";
 	clock-frequency = <400000>;
 
-	usbpd_sm5714: usbpd-sm5714@33 {
+	usbpd-sm5714@33 {
 		status = "okay";
 		compatible = "sm5714-usbpd";
 		reg = <0x33>;
@@ -60,9 +60,6 @@
 		usbpd,usbpd_int = <SEC_GPIO_REF(AP,pio,8) 0>;
 #if 0
 		usbpd,vbus_discharging = <SEC_GPIO_REF(${usbpd_vbus_discharging_gpio}) 0>;
-#endif
-#if 0
-		vconn-en;
 #endif
 		support_pd_role_swap;
 		pdic-manager {

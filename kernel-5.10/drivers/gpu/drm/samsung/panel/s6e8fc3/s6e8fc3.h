@@ -399,7 +399,6 @@ enum {
 #ifdef CONFIG_USDM_DDI_CMDLOG
 	DUMP_CMDLOG,
 #endif
-	MAX_DUMP_SIZE,
 };
 
 /* TODO: check dump log */
@@ -472,7 +471,7 @@ static struct dump_expect self_mask_crc_expects[] = {
 static struct dump_expect self_mask_checksum_expects[] = {
 };
 
-static struct dumpinfo s6e8fc3_dmptbl[MAX_DUMP_SIZE] = {
+static struct dumpinfo s6e8fc3_dmptbl[] = {
 	[DUMP_RDDPM] = DUMPINFO_INIT_V2(rddpm, &s6e8fc3_restbl[RES_RDDPM], &OLED_FUNC(OLED_DUMP_SHOW_RDDPM), rddpm_after_display_on_expects),
 	[DUMP_RDDPM_SLEEP_IN] = DUMPINFO_INIT_V2(rddpm_sleep_in, &s6e8fc3_restbl[RES_RDDPM], &OLED_FUNC(OLED_DUMP_SHOW_RDDPM_BEFORE_SLEEP_IN), rddpm_before_sleep_in_expects),
 	[DUMP_RDDSM] = DUMPINFO_INIT_V2(rddsm, &s6e8fc3_restbl[RES_RDDSM], &OLED_FUNC(OLED_DUMP_SHOW_RDDSM), rddsm_expects),

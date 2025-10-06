@@ -587,7 +587,6 @@ int sec_bat_parse_dt(struct device *dev,
 	sec_battery_platform_data_t *pdata = battery->pdata;
 	int ret = 0, len = 0;
 	unsigned int i = 0;
-	int eur_det_gpio = 0;
 	const u32 *p;
 	u32 temp = 0;
 
@@ -640,18 +639,10 @@ int sec_bat_parse_dt(struct device *dev,
 	pr_info("%s : TOPOFF_1ST(%d), TOPOFF_2ND(%d)\n",
 		__func__, pdata->full_check_current_1st, pdata->full_check_current_2nd);
 
-	pdata->default_usb_input_current =
-		pdata->charging_current[SEC_BATTERY_CABLE_USB].input_current_limit;
-	pdata->default_usb_charging_current =
-		pdata->charging_current[SEC_BATTERY_CABLE_USB].fast_charging_current;
-	pdata->default_wc20_input_current =
-		pdata->charging_current[SEC_BATTERY_CABLE_HV_WIRELESS_20].input_current_limit;
-	pdata->default_wc20_charging_current =
-		pdata->charging_current[SEC_BATTERY_CABLE_HV_WIRELESS_20].fast_charging_current;
-	pdata->default_mpp_input_current =
-		pdata->charging_current[SEC_BATTERY_CABLE_WIRELESS_MPP].input_current_limit;
-	pdata->default_mpp_charging_current =
-		pdata->charging_current[SEC_BATTERY_CABLE_WIRELESS_MPP].fast_charging_current;
+	pdata->default_usb_input_current = pdata->charging_current[SEC_BATTERY_CABLE_USB].input_current_limit;
+	pdata->default_usb_charging_current = pdata->charging_current[SEC_BATTERY_CABLE_USB].fast_charging_current;
+	pdata->default_wc20_input_current = pdata->charging_current[SEC_BATTERY_CABLE_HV_WIRELESS_20].input_current_limit;
+	pdata->default_wc20_charging_current = pdata->charging_current[SEC_BATTERY_CABLE_HV_WIRELESS_20].fast_charging_current;
 #ifdef CONFIG_SEC_FACTORY
 	pdata->default_charging_current = 1500;
 	pdata->charging_current[SEC_BATTERY_CABLE_TA].fast_charging_current = 1500;
@@ -738,7 +729,7 @@ int sec_bat_parse_dt(struct device *dev,
 		pdata->expired_time = (unsigned int) temp;
 	}
 	pdata->expired_time *= 1000;
-	battery->safety_timer.remaining_time = pdata->expired_time;
+	battery->expired_time = pdata->expired_time;
 
 	ret = of_property_read_u32(np,
 				   "battery,recharging_expired_time", &temp);
@@ -853,23 +844,6 @@ int sec_bat_parse_dt(struct device *dev,
 	pdata->usb_protection = of_property_read_bool(np,
 						     "battery,usb_protection");
 #endif
-
-	/* PMIC gpio
-	 * Pull down i.e. value 0 -> EUR
-	 * Pull up i.e. value 1 -> Non EUR
-	 */
-	eur_det_gpio = of_get_named_gpio(np, "battery,eur_detection", 0);
-	if (eur_det_gpio < 0) {
-		pr_info("%s: 'battery,eur_detection' not found\n", __func__);
-		pdata->auth_ic_support = 0;
-	} else {
-		ret = gpio_get_value(eur_det_gpio);
-		if (ret != 0) {
-			pr_err("%s: not valid auth IC device, gpio_val(%d)\n", __func__, ret);
-			pdata->auth_ic_support = 0;
-		} else
-			pdata->auth_ic_support = 1;
-	}
 
 	p = of_get_property(np, "battery,polling_time", &len);
 	if (!p)
@@ -1006,19 +980,6 @@ int sec_bat_parse_dt(struct device *dev,
 		if (ret)
 			pr_info("%s : chg_temp_recovery is Empty\n", __func__);
 
-		if (sec_bat_get_lpmode()) {
-			ret = of_property_read_u32(np, "battery,chg_high_temp_lpm", &temp);
-			if (!ret)
-				pdata->chg_high_temp = (int)temp;
-
-			ret = of_property_read_u32(np, "battery,chg_high_temp_recovery_lpm", &temp);
-			if (!ret)
-				pdata->chg_high_temp_recovery = (int)temp;
-
-		}
-		pr_info("%s : chg_temp_high(%d,%d)\n", __func__,
-				pdata->chg_high_temp, pdata->chg_high_temp_recovery);
-
 		ret = of_property_read_u32(np, "battery,chg_charging_limit_current",
 					   &pdata->chg_charging_limit_current);
 		if (ret)
@@ -1122,11 +1083,6 @@ int sec_bat_parse_dt(struct device *dev,
 			pdata->wpc_high_temp_recovery_15w = pdata->wpc_high_temp_recovery;
 		}
 
-		ret = of_property_read_u32(np, "battery,wpc_temp_offset_step",
-			&pdata->wpc_temp_offset_step);
-		if (ret)
-			pdata->wpc_temp_offset_step = 50;
-
 		pdata->wpc_high_check_using_lrp = of_property_read_bool(np, "battery,wpc_high_check_using_lrp");
 
 		if (pdata->wpc_high_check_using_lrp) {
@@ -1173,8 +1129,6 @@ int sec_bat_parse_dt(struct device *dev,
 			of_property_read_bool(np, "battery,enable_check_wpc_temp_v2");
 
 		if (pdata->enable_check_wpc_temp_v2) {
-			pdata->wpc_high_check_with_nv = of_property_read_bool(np, "battery,wpc_high_check_with_nv");
-
 			ret = of_property_read_u32(np, "battery,wpc_temp_v2_cond", &pdata->wpc_temp_v2_cond);
 			if (ret) {
 				pr_info("%s : wpc_temp_v2_cond is Empty\n", __func__);
@@ -1748,16 +1702,6 @@ int sec_bat_parse_dt(struct device *dev,
 	if (ret)
 		pr_info("%s: limiter_sub_warm_current is Empty\n", __func__);
 
-	ret = of_property_read_u32(np, "battery,limiter_main_wireless_warm_current",
-					&pdata->limiter_main_wireless_warm_current);
-	if (ret)
-		pr_info("%s: limiter_main_wireless_warm_current is Empty\n", __func__);
-
-	ret = of_property_read_u32(np, "battery,limiter_sub_wireless_warm_current",
-					&pdata->limiter_sub_wireless_warm_current);
-	if (ret)
-		pr_info("%s: limiter_sub_wireless_warm_current is Empty\n", __func__);
-
 	ret = of_property_read_u32(np, "battery,limiter_main_cool1_current",
 					&pdata->limiter_main_cool1_current);
 	if (ret)
@@ -2015,15 +1959,6 @@ int sec_bat_parse_dt(struct device *dev,
 
 	sec_bat_parse_dt_siop(battery, np);
 
-#if IS_ENABLED(CONFIG_DIRECT_CHARGING)
-	for (i = 0; i < DC_MODE_MAX; i++) {
-		if (i <= DC_MODE_2TO1)
-			pdata->apdo_max_volt_arr[i] = 11000;
-		else
-			pdata->apdo_max_volt_arr[i] = 16000;
-	}
-#endif
-
 	ret = of_property_read_u32(np, "battery,wireless_otg_input_current",
 			&pdata->wireless_otg_input_current);
 	if (ret)
@@ -2261,22 +2196,6 @@ int sec_bat_parse_dt(struct device *dev,
 	if (ret) {
 		pdata->tx_aov_delay_phm_escape = 4000;
 		pr_err("%s: tx aov dealy phm escape is Empty. set %d\n", __func__, pdata->tx_aov_delay_phm_escape);
-	}
-
-	pdata->tx_lrp_temp_compensation = of_property_read_bool(np, "battery,tx_lrp_temp_compensation");
-	if (pdata->tx_lrp_temp_compensation) {
-		ret = of_property_read_u32(np, "battery,tx_lrp_temp_trig",
-				&pdata->tx_lrp_temp_trig);
-		if (ret) {
-			pr_err("%s: tx_lrp_temp_trig is Empty\n", __func__);
-			pdata->tx_lrp_temp_trig = 430;
-		}
-		ret = of_property_read_u32(np, "battery,tx_lrp_temp_recov",
-				&pdata->tx_lrp_temp_recov);
-		if (ret) {
-			pr_err("%s: tx_lrp_temp_recov is Empty\n", __func__);
-			pdata->tx_lrp_temp_recov = 420;
-		}
 	}
 
 	pdata->wpc_warm_fod = of_property_read_bool(np, "battery,wpc_warm_fod");
@@ -2632,10 +2551,6 @@ int sec_bat_parse_dt(struct device *dev,
 						     "battery,disable_mfc");
 	pr_info("%s: disable_mfc(%d)\n", __func__, battery->disable_mfc);
 #endif
-
-	pdata->hall_ic_notifier = of_property_read_bool(np,
-						     "battery,hall_ic_notifier");
-	pr_info("%s: support hall_ic_notifier(%d)\n", __func__, pdata->hall_ic_notifier);
 	return 0;
 }
 EXPORT_SYMBOL(sec_bat_parse_dt);
@@ -2735,10 +2650,8 @@ void sec_bat_parse_mode_dt_work(struct work_struct *work)
 	sec_bat_parse_mode_dt(battery);
 
 	if (is_hv_wire_type(battery->cable_type) ||
-		(is_hv_wireless_type(battery->cable_type) &&
-		(battery->cable_type != SEC_BATTERY_CABLE_WIRELESS_MPP))) {
+		is_hv_wireless_type(battery->cable_type))
 		sec_bat_set_charging_current(battery);
-	}
 
 	__pm_relax(battery->parse_mode_dt_ws);
 }

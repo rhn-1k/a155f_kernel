@@ -8,11 +8,3 @@ menuconfig USDM_PANEL_S6E8FC3
 		common panel driver. say Y, if you have a panel based on
 		the S6E8FC3 DDI.
 
-
-########## FOR KUNIT ##########
-
-config S6E8FC3_TEST
-	bool "KUnit test for s6e8fc3 ddi driver"
-	depends on SEC_KUNIT
-	help
-	  TODO: Describe config fully.

@@ -191,7 +191,7 @@ int send_ub_state(void)
 					LIGHT_SUBCMD_UB_CONNECTED, &enable, sizeof(enable));
 
 	if (ub_state == PANEL_EVENT_UB_CON_STATE_DISCONNECTED)
-		ret = shub_send_status(get_lcd_status(), NULL, 0);
+		ret = shub_send_status(get_lcd_status());
 
 	return ret;
 }
@@ -238,7 +238,10 @@ static int panel_notifier_callback(struct notifier_block *nb, unsigned long even
 
 	if (event == PANEL_EVENT_BL_STATE_CHANGED) {
 		struct shub_data_t *shub_data = get_shub_data();
-		u32 brightness_resolution = shub_data->brightness_resolution;
+		u32 brightness_resolution = 1;
+
+		if (strcmp(shub_data->model_name, "S921") == 0 || strcmp(shub_data->model_name, "S926") == 0)
+			brightness_resolution = 10;
 
 		evtdata->d.bl.level = evtdata->d.bl.level / brightness_resolution;
 

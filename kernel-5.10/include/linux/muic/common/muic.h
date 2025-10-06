@@ -684,7 +684,6 @@ extern int muic_afc_get_voltage(void);
 extern int muic_afc_set_voltage(int voltage);
 extern int muic_afc_request_voltage(int cause, int voltage);
 extern int muic_afc_request_cause_clear(void);
-extern int muic_afc_request_cause_clear_bit(int cause);
 extern int muic_afc_get_request_cause(void);
 extern bool muic_is_enable_afc_request(void);
 extern int muic_hv_charger_disable(bool en);
@@ -701,7 +700,6 @@ static inline int muic_set_pogo_adc(int adc) {return 0};
 static inline int muic_afc_set_voltage(int voltage) {return 0; }
 static inline int muic_afc_request_voltage(int cause, int voltage);
 static inline int muic_afc_request_cause_clear(void);
-static inline int muic_afc_request_cause_clear_bit(int cause);
 static inline int muic_afc_get_request_cause(void) {return 0;}
 static inline bool muic_is_enable_afc_request(void) {return false;}
 static inline int muic_hv_charger_disable(bool en) {return 0; }

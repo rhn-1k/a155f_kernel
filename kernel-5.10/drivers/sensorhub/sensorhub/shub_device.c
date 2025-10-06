@@ -22,7 +22,6 @@
 #include "../comm/shub_iio.h"
 #include "../debug/shub_debug.h"
 #include "../debug/shub_system_checker.h"
-#include "../debug/shub_mini_dump.h"
 #include "../sensormanager/shub_sensor_manager.h"
 #include "../sensormanager/shub_sensor_sysfs.h"
 #include "../sensormanager/shub_sensor_type.h"
@@ -31,7 +30,6 @@
 #include "../utility/shub_wakelock.h"
 #include "../utility/shub_file_manager.h"
 #include "../vendor/shub_vendor.h"
-#include "../others/shub_callback.h"
 #include "../others/shub_motor_callback.h"
 #include "../others/shub_panel.h"
 #include "../debug/shub_dump.h"
@@ -48,16 +46,6 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/regulator/consumer.h>
-#include <linux/version.h>
-
-#if defined(CONFIG_SHUB_KUNIT)
-#include <kunit/mock.h>
-#define __mockable __weak
-#define __visible_for_testing
-#else
-#define __mockable
-#define __visible_for_testing static
-#endif
 
 static struct shub_data_t *shub_data;
 
@@ -156,7 +144,7 @@ static int get_shub_system_info_from_hub(void)
 
 	if ((is_support_system_feature(SF_PROBE_V2) && buffer_length != SYSTEM_INFO_SIZE_V2) ||
 	    (!is_support_system_feature(SF_PROBE_V2) && buffer_length != SYSTEM_INFO_SIZE_V1)) {
-		shub_errf("buffer_length error : %d", buffer_length);
+		shub_errf("buffer_lenght error : %d", buffer_length);
 		ret = -EINVAL;
 	}
 
@@ -185,7 +173,7 @@ void set_model_name_to_hub(void)
 		strcpy(shub_data->model_name, model_name_string);
 		shub_send_command(CMD_SETVALUE, TYPE_HUB, MODEL_NAME_INFO, shub_data->model_name, MODEL_NAME_MAX);
 	} else {
-		shub_infof("model name dt doesn't exist");
+		shub_infof("model name dt doesn't exsist");
 	}
 }
 
@@ -202,7 +190,7 @@ static int send_pm_state(u8 pm_state)
 	return ret;
 }
 
-__visible_for_testing int init_sensorhub(void)
+static int init_sensorhub(void)
 {
 	int ret = 0;
 	char buf[][2] = { {0x00, shub_data->intent_screen_state}, {0x00, shub_data->display_screen_state}};
@@ -214,9 +202,9 @@ __visible_for_testing int init_sensorhub(void)
 	set_model_name_to_hub();
 
 	send_pm_state(shub_data->pm_status);
-	shub_send_status(shub_data->lcd_status, NULL, 0);
-	shub_send_status(SCREEN_STATE, buf[0], 2);
-	shub_send_status(SCREEN_STATE, buf[1], 2);
+	shub_send_status(shub_data->lcd_status);
+	shub_send_status_with_buffer(SCREEN_STATE, buf[0], 2);
+	shub_send_status_with_buffer(SCREEN_STATE, buf[1], 2);
 
 	return ret;
 }
@@ -225,7 +213,6 @@ void init_others(void)
 {
 	sync_motor_state();
 	sync_panel_state();
-	shub_sync_callback();
 }
 
 struct reset_info_t get_reset_info(void)
@@ -275,8 +262,8 @@ static void refresh_task(struct work_struct *work)
 		goto exit;
 
 	if (shub_data->cnt_reset == 0) {
+		initialize_factory();
 		initialize_shub_dump();
-		initialize_shub_mini_dump();
 	}
 
 #ifdef CONFIG_SHUB_DEBUG
@@ -305,11 +292,24 @@ int queue_refresh_task(void)
 	return 0;
 }
 
-int shub_send_status(u8 state_sub_cmd, char *send_buf, int send_buf_len)
+int shub_send_status_with_buffer(u8 state_sub_cmd, char *send_buf, int send_buf_len)
 {
 	int ret;
 
 	ret = shub_send_command(CMD_SETVALUE, TYPE_HUB, state_sub_cmd, send_buf, send_buf_len);
+	if (ret < 0)
+		shub_errf("command %d failed", state_sub_cmd);
+	else
+		shub_infof("command %d", state_sub_cmd);
+
+	return ret;
+}
+
+int shub_send_status(u8 state_sub_cmd)
+{
+	int ret;
+
+	ret = shub_send_command(CMD_SETVALUE, TYPE_HUB, state_sub_cmd, NULL, 0);
 	if (ret < 0)
 		shub_errf("command %d failed", state_sub_cmd);
 	else
@@ -362,10 +362,10 @@ void reset_mcu(int reason)
 static int init_sensor_vdd(void)
 {
 	int ret = 0;
-	int sensor_ldo_en = 0;
 	int prox_ldo_en = 0;
 	const char *sensor_vdd;
 	struct device_node *np = shub_data->pdev->dev.of_node;
+	enum of_gpio_flags flags;
 
 	if (of_property_read_string(np, "sensor-vdd-regulator", &sensor_vdd) >= 0) {
 		shub_infof("regulator: %s", sensor_vdd);
@@ -379,29 +379,29 @@ static int init_sensor_vdd(void)
 			regulator_set_load(shub_data->sensor_vdd_regulator, 1800000);
 			shub_infof("sensor_vdd_regulator ok");
 		}
-	}
+	} else {
+		int sensor_ldo_en = of_get_named_gpio_flags(np, "sensor-ldo-en", 0, &flags);
 
-	sensor_ldo_en = of_get_named_gpio(np, "sensor-ldo-en", 0);
+		if (sensor_ldo_en >= 0) {
+			shub_infof("sensor_ldo_en: %d", sensor_ldo_en);
+			shub_data->sensor_ldo_en = sensor_ldo_en;
 
-	if (sensor_ldo_en >= 0) {
-		shub_infof("sensor_ldo_en: %d", sensor_ldo_en);
-		shub_data->sensor_ldo_en = sensor_ldo_en;
-
-		ret = gpio_request(shub_data->sensor_ldo_en, "sensor_ldo_en");
-		if (ret < 0) {
-			shub_errf("gpio %d request failed %d", shub_data->sensor_ldo_en, ret);
-			return ret;
+			ret = gpio_request(shub_data->sensor_ldo_en, "sensor_ldo_en");
+			if (ret < 0) {
+				shub_errf("gpio %d request failed %d", shub_data->sensor_ldo_en, ret);
+				return ret;
+			}
+			gpio_direction_output(shub_data->sensor_ldo_en, 1);
+			gpio_free(shub_data->sensor_ldo_en);
 		}
-		gpio_direction_output(shub_data->sensor_ldo_en, 1);
-		gpio_free(shub_data->sensor_ldo_en);
 	}
 
-	prox_ldo_en = of_get_named_gpio(np, "prox-ldo-en", 0);
+	prox_ldo_en = of_get_named_gpio_flags(np, "prox-ldo-en", 0, &flags);
 
 	if (prox_ldo_en >= 0) {
 		shub_infof("prox_ldo_en: %d", prox_ldo_en);
 
-		shub_data->prox_ldo_en = prox_ldo_en;
+		shub_data->sensor_ldo_en = prox_ldo_en;
 
 		ret = gpio_request(prox_ldo_en, "prox_ldo_en");
 		if (ret < 0) {
@@ -429,15 +429,12 @@ int enable_sensor_vdd(void)
 		} else {
 			shub_info("sensor vdd regulator is already enabled");
 		}
-	}
-
-	if (shub_data->sensor_ldo_en) {
+	} else if (shub_data->sensor_ldo_en) {
 		ret = gpio_request(shub_data->sensor_ldo_en, "sensor_ldo_en");
 		if (ret < 0) {
 			shub_errf("sensor ldo en gpio %d request failed %d", shub_data->sensor_ldo_en, ret);
 		} else {
 			gpio_set_value(shub_data->sensor_ldo_en, 1);
-			shub_info("sensor ldo en set");
 			gpio_free(shub_data->sensor_ldo_en);
 		}
 	}
@@ -468,9 +465,7 @@ int disable_sensor_vdd(void)
 		} else {
 			shub_info("sensor vdd regulator is already disabled");
 		}
-	}
-
-	if (shub_data->sensor_ldo_en) {
+	} else if (shub_data->sensor_ldo_en) {
 		ret = gpio_request(shub_data->sensor_ldo_en, "sensor_ldo_en");
 		if (ret < 0) {
 			shub_errf("sensor ldo en gpio %d request failed %d", shub_data->sensor_ldo_en, ret);
@@ -518,6 +513,9 @@ int init_sensorhub_device(void)
 
 		for (type = 0; type <= RESET_TYPE_MAX; type++)
 			shub_data->cnt_shub_reset[type] = 0;
+
+		for (type = 0; type < MINI_DUMP_LENGTH; type++)
+			shub_data->mini_dump[type] = 0;
 	}
 
 	shub_data->pm_status = PM_COMPLETE;
@@ -574,12 +572,6 @@ int shub_probe(struct platform_device *pdev)
 	if (!dev->of_node) {
 		shub_errf("failed to get device node");
 		return -ENODEV;
-	} else {
-		if (of_property_read_u32(dev->of_node, "brightness-resolution", &shub_data->brightness_resolution))
-			shub_data->brightness_resolution = 1;
-
-		if (!shub_data->brightness_resolution)
-			shub_data->brightness_resolution = 1;
 	}
 
 	if (init_sensor_manager(dev) < 0) {
@@ -607,11 +599,6 @@ int shub_probe(struct platform_device *pdev)
 		goto err_init_misc_dev;
 	}
 
-	if (initialize_factory() < 0) {
-		shub_errf("failed to init factory sysfs");
-		goto err_init_factory_sysfs;
-	}
-
 	if (init_shub_sysfs() < 0) {
 		shub_errf("failed to init shub sysfs");
 		goto err_init_shub_sysfs;
@@ -637,8 +624,6 @@ int shub_probe(struct platform_device *pdev)
 		goto err_initialize_indio_dev;
 	}
 
-	initialize_shub_callback();
-
 	init_shub_panel();
 #if IS_ENABLED(CONFIG_SEC_PANEL_NOTIFIER_V2) && IS_ENABLED(CONFIG_SHUB_PANEL_NOTIFY)
 	init_shub_panel_callback();
@@ -663,8 +648,6 @@ err_init_file_manager:
 	remove_shub_debug_sysfs();
 err_init_debug_sysfs:
 	remove_shub_sysfs();
-err_init_factory_sysfs:
-	remove_factory();
 err_init_sensor_sysfs:
 	remove_shub_misc_dev();
 err_init_shub_sysfs:
@@ -696,7 +679,6 @@ void shub_shutdown(struct platform_device *pdev)
 	remove_shub_panel_callback();
 #endif
 	remove_shub_dump();
-	remove_shub_mini_dump();
 	remove_shub_motor_callback();
 	remove_factory();
 	remove_indio_dev();
@@ -705,7 +687,6 @@ void shub_shutdown(struct platform_device *pdev)
 	remove_shub_sysfs();
 	remove_shub_sensor_sysfs();
 	remove_shub_misc_dev();
-	initialize_light_factory(false, INIT_FACTORY_MODE_REMOVE_ALL);
 	exit_comm_to_hub();
 	exit_shub_debug();
 	exit_sensorhub_device();
@@ -768,10 +749,5 @@ void shub_complete(struct device *dev)
 
 void shub_queue_work(struct work_struct *work)
 {
-	if (!shub_data->shub_wq || !work) {
-		shub_errf("shub_wq or work is null");
-		return;
-	}
-
 	queue_work(shub_data->shub_wq, work);
 }

@@ -15,7 +15,6 @@
 
 #include "../../utility/shub_utility.h"
 #include "../../comm/shub_comm.h"
-#include "../../factory/shub_factory.h"
 #include "../../sensor/flip_cover_detector.h"
 #include "../../sensor/magnetometer.h"
 #include "../../sensorhub/shub_device.h"
@@ -57,15 +56,7 @@ static char sysfs_cover_status[10];
 static ssize_t nfc_cover_status_show(struct device *dev,
 				    struct device_attribute *attr, char *buf)
 {
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct flip_cover_detector_data *data;
-	
-	if (!sensor) {
-		shub_infof("sensor is null\n");
-		return -EINVAL;
-	}
-
-	data = sensor->data;
+	struct flip_cover_detector_data *data = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR)->data;
 
 	if (data->nfc_cover_status == COVER_ATTACH || data->nfc_cover_status == COVER_ATTACH_NFC_ACTIVE || data->nfc_cover_status == COVER_ATTACH_NFC_TAG_PRESENT) {
 		snprintf(sysfs_cover_status, 10, "CLOSE");
@@ -83,15 +74,7 @@ static ssize_t nfc_cover_status_store(struct device *dev,
 {
 	int status = 0;
 	int ret = 0;
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct flip_cover_detector_data *data;
-	
-	if (!sensor) {
-		shub_infof("sensor is null\n");
-		return size;
-	}
-
-	data = sensor->data;
+	struct flip_cover_detector_data *data = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR)->data;
 
 	ret = kstrtoint(buf, 10, &status);
 	if (ret < 0)
@@ -117,19 +100,9 @@ static void factory_data_init(void)
 {
 	int mag_data[AXIS_MAX];
 	int axis = 0;
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct flip_cover_detector_data *data;
-	struct flip_cover_detector_event *sensor_value; 
-	struct sensor_event *event;
-
-	if (!sensor) {
-		shub_infof("sensor is null");
-		return;
-	} 
-
-	data = sensor->data;
-	event = get_sensor_event(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	sensor_value = (struct flip_cover_detector_event *)event->value;
+	struct flip_cover_detector_data *data = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR)->data;
+	struct sensor_event *event = get_sensor_event(SENSOR_TYPE_FLIP_COVER_DETECTOR);
+	struct flip_cover_detector_event *sensor_value = (struct flip_cover_detector_event *)event->value;
 
 	shub_infof("");
 
@@ -162,16 +135,8 @@ void check_cover_detection_factory(void)
 	int axis = 0;
 	int axis_select = factory_data->axis_select;
 	int mag_data[AXIS_MAX];
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct sensor_event *event;
-	struct flip_cover_detector_event *sensor_value;
-
-	if (!sensor) {
-		shub_infof("sensor is null");
-	}
-
-	event = get_sensor_event(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	sensor_value = (struct flip_cover_detector_event *)event->value;
+	struct sensor_event *event = get_sensor_event(SENSOR_TYPE_FLIP_COVER_DETECTOR);
+	struct flip_cover_detector_event *sensor_value = (struct flip_cover_detector_event *)event->value;
 
 	if (factory_data->event_count == 0) {
 		factory_data_init();
@@ -184,7 +149,7 @@ void check_cover_detection_factory(void)
 	factory_data->saturation = sensor_value->saturation;
 
 	shub_infof("[FACTORY] uncal mag : %d %d %d, saturation : %d",
-		mag_data[X], mag_data[Y], mag_data[Z], factory_data->saturation);
+		  mag_data[X], mag_data[Y], mag_data[Z], factory_data->saturation);
 
 	if (!strcmp(factory_data->cover_status, DETACH)) {
 		if (mag_data[axis_select] > factory_data->failed_attach_max) {
@@ -206,7 +171,7 @@ void check_cover_detection_factory(void)
 		}
 
 		shub_infof("[FACTORY] : failed_attach_max=%d, failed_attach_min=%d",
-			factory_data->failed_attach_max, factory_data->failed_attach_min);
+			  factory_data->failed_attach_max, factory_data->failed_attach_min);
 
 		factory_data->attach_diff = mag_data[axis_select] - factory_data->init[axis_select];
 
@@ -278,30 +243,22 @@ void check_cover_detection_factory(void)
 	}
 
 	shub_infof("[FACTORY] : cover_status=%s, axis_select=%d, thd=%d, \
-			x_init=%d, x_attach=%d, x_min_max=%d, x_detach=%d, \
-			y_init=%d, y_attach=%d, y_min_max=%d, y_detach=%d, \
-			z_init=%d, z_attach=%d, z_min_max=%d, z_detach=%d, \
-			attach_result=%s, detach_result=%s, final_result=%s",
-			factory_data->cover_status, factory_data->axis_select, factory_data->threshold,
-			factory_data->init[X], factory_data->attach[X], factory_data->attach_extremum[X],
-			factory_data->detach[X], factory_data->init[Y], factory_data->attach[Y],
-			factory_data->attach_extremum[Y], factory_data->detach[Y], factory_data->init[Z],
-			factory_data->attach[Z], factory_data->attach_extremum[Z], factory_data->detach[Z],
-			factory_data->attach_result, factory_data->detach_result, factory_data->final_result);
+		    x_init=%d, x_attach=%d, x_min_max=%d, x_detach=%d, \
+		    y_init=%d, y_attach=%d, y_min_max=%d, y_detach=%d, \
+		    z_init=%d, z_attach=%d, z_min_max=%d, z_detach=%d, \
+		    attach_result=%s, detach_result=%s, final_result=%s",
+		    factory_data->cover_status, factory_data->axis_select, factory_data->threshold,
+		    factory_data->init[X], factory_data->attach[X], factory_data->attach_extremum[X],
+		    factory_data->detach[X], factory_data->init[Y], factory_data->attach[Y],
+		    factory_data->attach_extremum[Y], factory_data->detach[Y], factory_data->init[Z],
+		    factory_data->attach[Z], factory_data->attach_extremum[Z], factory_data->detach[Z],
+		    factory_data->attach_result, factory_data->detach_result, factory_data->final_result);
 }
 
 static void enable_factory_test(int request)
 {
 	int ret = 0;
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct flip_cover_detector_data *data;
-	
-	if (!sensor) {
-		shub_infof("sensor is null");
-		return;
-	}
-
-	data = sensor->data;
+	struct flip_cover_detector_data *data = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR)->data;
 
 	data->factory_cover_status = request;
 	ret = shub_send_command(CMD_SETVALUE, SENSOR_TYPE_FLIP_COVER_DETECTOR, SENSOR_FACTORY,
@@ -345,15 +302,7 @@ static ssize_t factory_cover_status_store(struct device *dev,
 {
 	int factory_test_request = 0;
 	int ret = 0;
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct flip_cover_detector_data *data;
-	
-	if (!sensor) {
-		shub_infof("sensor is null");
-		return -EINVAL;
-	}
-	
-	data = sensor->data;
+	struct flip_cover_detector_data *data = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR)->data;
 
 	ret = kstrtoint(buf, 10, &factory_test_request);
 	if (ret < 0)
@@ -375,15 +324,7 @@ static ssize_t factory_cover_status_store(struct device *dev,
 
 static ssize_t axis_threshold_setting_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct flip_cover_detector_data *data;
-	
-	if (!sensor) {
-		shub_infof("sensor is null\n");
-		return -EINVAL;
-	}
-	
-	data = sensor->data;
+	struct flip_cover_detector_data *data = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR)->data;
 
 	shub_infof("[FACTORY] axis=%d, threshold=%d", data->axis_update, data->threshold_update);
 
@@ -393,20 +334,12 @@ static ssize_t axis_threshold_setting_show(struct device *dev, struct device_att
 static ssize_t axis_threshold_setting_store(struct device *dev,
 					    struct device_attribute *attr, const char *buf, size_t size)
 {
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR);
-	struct flip_cover_detector_data *data;
+	struct flip_cover_detector_data *data = get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR)->data;
 	int ret;
 	int axis;
 	int threshold;
 	int8_t shub_data[5] = {0};
-	
-	if (!sensor) {
-		shub_infof("sensor is null");
-		return -EINVAL;
-	}
 
- 	data = sensor->data;
-	
 	ret = sscanf(buf, "%d,%d", &axis, &threshold);
 
 	if (ret != 2) {
@@ -490,28 +423,23 @@ static void initialize_fcd_factorytest(void)
 static void remove_fcd_factorytest(void)
 {
 	remove_sensor_device_attr(fcd_sysfs_device, fcd_attrs);
-	sensor_device_unregister(fcd_sysfs_device);
+	sensor_device_destroy(fcd_sysfs_device);
 
 	if (factory_data != NULL) {
 		if (factory_data->factory_test_status == ON)
 			enable_factory_test(OFF);
-
-		kfree(factory_data);
-		factory_data = NULL;
 	}
 
-	fcd_sysfs_device = NULL;
+	kfree(factory_data);
 }
 
-void initialize_flip_cover_detector_factory(bool en, int mode)
+void initialize_flip_cover_detector_factory(bool en)
 {
+	if (!get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR) || !check_flip_cover_detector_supported())
+		return;
+
 	if (en)
 		initialize_fcd_factorytest();
-	else {
-		if (mode == INIT_FACTORY_MODE_REMOVE_EMPTY
-		    && get_sensor(SENSOR_TYPE_FLIP_COVER_DETECTOR) && check_flip_cover_detector_supported())
-			shub_infof("support flip_cover_detector sysfs");
-		else
-			remove_fcd_factorytest();
-	}
+	else
+		remove_fcd_factorytest();
 }

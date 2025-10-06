@@ -31,7 +31,6 @@
 #include "five_porting.h"
 #include "five_cache.h"
 #include "five_dmverity.h"
-#include "five_log.h"
 
 int five_read_xattr(struct dentry *dentry, char **xattr_value)
 {
@@ -91,7 +90,7 @@ int five_appraise_measurement(struct task_struct *task, int func,
 	enum task_integrity_value prev_integrity;
 	int rc = 0;
 
-	FIVE_BUG_ON(!task || !iint || !file);
+	BUG_ON(!task || !iint || !file);
 
 	prev_integrity = task_integrity_read(TASK_INTEGRITY(task));
 	dentry = file->f_path.dentry;

@@ -50,14 +50,6 @@
 };
 #endif
 
-#if defined(ERR_FG_Falling_edge_pull_down)
-&${err_fg_parent} {
-	err_fg_default: err_fg_default {
-		GPIO_CONFIG_PUD(${err_fg_gpio}, FUNC_INPUT, PULL_DOWN);
-	};
-};
-#endif
-
 #if 1
 &pio {
 	conn_det_default: conn_det_default {
@@ -129,22 +121,14 @@
 };
 #endif
 
-#if 0
-&${rst_ready_parent} {
-	rst_ready_default: rst_ready_default {
-		GPIO_CONFIG_PUD(${rst_ready_gpio}, FUNC_INPUT, PULL_DOWN);
-	};
-};
-#endif
-
 #if 1
-&fixed_regulator0 {
+&fixed_regulator2 {
 	regulator-boot-on;
 };
 #endif
 
 #if 1
-&fixed_regulator1 {
+&fixed_regulator3 {
 	regulator-boot-on;
 };
 #endif
@@ -163,7 +147,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <
 							&disp_rst_default
-#if defined(ERR_FG_Rising_edge) || defined(ERR_FG_Falling_edge) || defined(ERR_FG_TRUE) || defined(ERR_FG_Falling_edge_pull_down)
+#if defined(ERR_FG_Rising_edge) || defined(ERR_FG_Falling_edge) || defined(ERR_FG_TRUE)
 							&err_fg_default
 #endif
 #if 1
@@ -184,9 +168,6 @@
 #endif
 #if 0
 							&lcd_vendor_check_default
-#endif
-#if 0
-							&rst_ready_default
 #endif
 				>;
 
@@ -215,7 +196,7 @@
 					};
 
 #endif
-#if defined(ERR_FG_Falling_edge) || defined(ERR_FG_Falling_edge_pull_down)
+#if defined(ERR_FG_Falling_edge)
 					err_fg: err-fg {
 						gpios = <SEC_GPIO_REF(${err_fg_gpio}) 0>;		/* 0:NOK(active) 1:OK */
 						dir = <1>;				/* IN */
@@ -250,27 +231,19 @@
 						irq-type = <0x0>;   /* NONE */
 					};
 #endif
-#if 0
-					disp_reset_ready: disp_reset_ready {
-						gpios = <SEC_GPIO_REF(${rst_ready_gpio}) 1>;		/* 0:NOK(active) 1:OK */
-						dir = <1>;				/* IN */
-						irq-type = <0x0>;   /* NONE */
-					};
-#endif
-
 				};
 
 				regulators {
 #if 1
 					ddi_vci: ddi-vci {
-						regulator = <&fixed_regulator0>;
+						regulator = <&fixed_regulator2>;
 						type = <REGULATOR_TYPE_PWR>;
 						def-voltage = <3000000>;
 					};
 #endif
 #if 1
 					ddi_vdd3: ddi-vdd3 {
-						regulator = <&fixed_regulator1>;
+						regulator = <&fixed_regulator3>;
 						type = <REGULATOR_TYPE_PWR>;
 						def-voltage = <1800000>;
 					};

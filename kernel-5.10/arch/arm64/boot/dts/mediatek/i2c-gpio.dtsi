@@ -19,11 +19,11 @@
 		target-path = "/";
 	        __overlay__ {
 			aliases {
-				  i2c50 = "/i2c@50";
+				  i2c30 = "/i2c@30";
 			};
 			/* Software I2C */
-			sw_i2c0: i2c@50 {
-				cell-index = <50>;
+			sw_i2c0: i2c@30 {
+				cell-index = <30>;
 				compatible = "i2c-gpio";
 				gpios = <
 					SEC_GPIO_REF(AP,pio,104) 0 /* SDA */

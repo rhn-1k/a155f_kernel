@@ -214,7 +214,6 @@ static int setup_direct_charging_work_config(struct sm_dc_info *sm_dc)
 	sm_dc->wq.retry_cnt = 0;
 	sm_dc->wq.vbatreg_cnt = 0;
 	sm_dc->wq.cc_cnt = 0;
-	sm_dc->wq.done_cnt = 0;
 	sm_dc->wq.pps_vcm = 0;
 	sm_dc->wq.target_pps_v = sm_dc->ta.v;
 
@@ -959,12 +958,8 @@ static void pd_cv_work(struct work_struct *work)
 
 	/* Support to "POWER_SUPPLY_EXT_PROP_DIRECT_DONE" used ADC_IBUS */
 	if (sm_dc->config.topoff_current > 0) {
-#if IS_ENABLED(CONFIG_DUAL_BATTERY)
-		if (adc_ibus < sm_dc->config.topoff_current) {
-#else
 		if ((sm_dc->target_vbat == sm_dc->config.chg_float_voltage) &&
 			(adc_ibus < sm_dc->config.topoff_current)) {
-#endif
 			pr_info("%s %s: dc done!!\n", sm_dc->name, __func__);
 			schedule_delayed_work(&sm_dc->done_event_work, msecs_to_jiffies(50));
 		}
@@ -1062,16 +1057,8 @@ static void pd_cv_fpdo_work(struct work_struct *work)
 	if (mainvbat >= sm_dc->config.fpdo_mainvbat_reg ||
 		subvbat >= sm_dc->config.fpdo_subvbat_reg ||
 		adc_ibus * 1000 < sm_dc->config.fpdo_topoff) {
-		if (sm_dc->wq.done_cnt < 3) {
-			pr_info("%s %s: check dc done cnt(%d)\n", sm_dc->name, __func__, sm_dc->wq.done_cnt);
-			sm_dc->wq.done_cnt++;
-		} else {
-			sm_dc->wq.done_cnt = 0;
-			pr_info("%s %s: fpdo dc done!!\n", sm_dc->name, __func__);
-			schedule_delayed_work(&sm_dc->done_event_work, msecs_to_jiffies(50));
-		}
-	} else {
-		sm_dc->wq.done_cnt = 0;
+		pr_info("%s %s: fpdo dc done!!\n", sm_dc->name, __func__);
+		schedule_delayed_work(&sm_dc->done_event_work, msecs_to_jiffies(50));
 	}
 #else
 	psy_do_property("battery", get, POWER_SUPPLY_PROP_VOLTAGE_NOW, val);
@@ -2132,11 +2119,7 @@ int sm_dc_start_manual_charging(struct sm_dc_info *sm_dc)
 	sm_dc->target_vbat = pps_v(adc_vbat + (PPS_V_STEP * 10)); /* VBAT_ADC + 200mV */
 	sm_dc->target_ibus = SM_DC_MANUAL_TA_MAX_CUR;
 	sm_dc->ta.c = pps_c(MIN(sm_dc->ta.c_max, sm_dc->target_ibus));
-#if IS_ENABLED(CONFIG_DUAL_BATTERY)
-	sm_dc->ta.v = pps_v((2 * adc_vbat) + (PPS_V_STEP * 2)); /* VBAT_ADC + 40mV */
-#else
 	sm_dc->ta.v = pps_v((2 * adc_vbat) + (PPS_V_STEP * 4)); /* VBAT_ADC + 80mV */
-#endif
 
 	pr_info("%s %s: adc_vbat=%dmV, ta_min_v=%dmV, v_max=%dmV, c_max=%dmA, target_ibus=%dmA, target_vbat=%dmV\n",
 			sm_dc->name, __func__, adc_vbat, sm_dc->config.ta_min_voltage, sm_dc->ta.v_max,
@@ -2233,20 +2216,8 @@ int sm_dc_set_ta_volt_by_soc(struct sm_dc_info *sm_dc, int delta_soc)
 	unsigned int prev_ta_vol = sm_dc->ta.v;
 
 	if (delta_soc < 0) { // increase soc (soc_now - ref_soc)
-#if IS_ENABLED(CONFIG_DUAL_BATTERY)
-		if (sm_dc->wq.cv_cnt < 5) {
-			sm_dc->ta.v += PPS_V_STEP;
-			sm_dc->wq.cv_cnt += 1;
-		}
-#endif
 		sm_dc->ta.v += PPS_V_STEP;
 	} else if (delta_soc > 0) { // decrease soc (soc_now - ref_soc)
-#if IS_ENABLED(CONFIG_DUAL_BATTERY)
-		if (sm_dc->wq.cv_cnt < 5) {
-			sm_dc->ta.v -= PPS_V_STEP;
-			sm_dc->wq.cv_cnt += 1;
-		}
-#endif
 		sm_dc->ta.v -= PPS_V_STEP;
 	} else {
 		pr_info("%s: abnormal delta_soc=%d\n", __func__, delta_soc);

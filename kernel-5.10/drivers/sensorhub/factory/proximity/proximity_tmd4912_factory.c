@@ -26,7 +26,20 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 
-static ssize_t proximity_tmd4912_prox_led_test_show(char *buf)
+#define TMD4912_NAME   "TMD4912"
+#define TMD4912_VENDOR "AMS"
+
+static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", TMD4912_NAME);
+}
+
+static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", TMD4912_VENDOR);
+}
+
+static ssize_t prox_led_test_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 	char *buffer = NULL;
@@ -61,7 +74,7 @@ static ssize_t proximity_tmd4912_prox_led_test_show(char *buf)
 }
 
 /* show calibration result */
-static ssize_t proximity_tmd4912_prox_trim_show(char *buf)
+static ssize_t prox_trim_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret;
 	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_PROXIMITY);
@@ -71,7 +84,7 @@ static ssize_t proximity_tmd4912_prox_trim_show(char *buf)
 	if (data->cal_data_len == 0)
 		return -EINVAL;
 
-	ret = sensor->funcs->open_calibration_file(SENSOR_TYPE_PROXIMITY);
+	ret = sensor->funcs->open_calibration_file();
 	if (ret == data->cal_data_len)
 		cal_data = (int *)data->cal_data;
 
@@ -87,12 +100,13 @@ static ssize_t proximity_tmd4912_prox_trim_show(char *buf)
 	return snprintf(buf, PAGE_SIZE, "%d\n", ret);
 }
 
-static ssize_t proximity_tmd4912_trim_check_show(char *buf)
+static ssize_t trim_check_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return sprintf(buf, "0\n");
 }
 
-static ssize_t proximity_tmd4912_prox_cal_show(char *buf)
+static ssize_t prox_cal_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	int ret;
 	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_PROXIMITY);
@@ -102,14 +116,14 @@ static ssize_t proximity_tmd4912_prox_cal_show(char *buf)
 	if (data->cal_data_len == 0)
 		return -EINVAL;
 
-	ret = sensor->funcs->open_calibration_file(SENSOR_TYPE_PROXIMITY);
+	ret = sensor->funcs->open_calibration_file();
 	if (ret == data->cal_data_len)
 		memcpy(cal_data, data->cal_data, sizeof(cal_data));
 
 	return snprintf(buf, PAGE_SIZE, "%d,%d\n", cal_data[0], cal_data[1]);
 }
 
-static ssize_t proximity_tmd4912_prox_cal_store(const char *buf, size_t size)
+static ssize_t prox_cal_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret = 0;
 	int64_t enable = 0;
@@ -145,18 +159,27 @@ static ssize_t proximity_tmd4912_prox_cal_store(const char *buf, size_t size)
 	return size;
 }
 
-struct proximity_factory_chipset_funcs proximity_tmd4912_ops = {
-	.trim_check_show = proximity_tmd4912_trim_check_show,
-	.prox_cal_show = proximity_tmd4912_prox_cal_show,
-	.prox_cal_store = proximity_tmd4912_prox_cal_store,
-	.prox_trim_show = proximity_tmd4912_prox_trim_show,
-	.prox_led_test_show = proximity_tmd4912_prox_led_test_show,
+static DEVICE_ATTR_RO(name);
+static DEVICE_ATTR_RO(vendor);
+static DEVICE_ATTR_RO(prox_led_test);
+static DEVICE_ATTR_RO(trim_check);
+static DEVICE_ATTR_RO(prox_trim);
+static DEVICE_ATTR(prox_cal, 0660, prox_cal_show, prox_cal_store);
+
+static struct device_attribute *proximity_tmd4912_attrs[] = {
+	&dev_attr_name,
+	&dev_attr_vendor,
+	&dev_attr_prox_led_test,
+	&dev_attr_prox_cal,
+	&dev_attr_prox_trim,
+	&dev_attr_trim_check,
+	NULL,
 };
 
-struct proximity_factory_chipset_funcs *get_proximity_tmd4912_chipset_func(char *name)
+struct device_attribute **get_proximity_tmd4912_dev_attrs(char *name)
 {
-	if (strcmp(name, "TMD4912") != 0)
+	if (strcmp(name, TMD4912_NAME) != 0)
 		return NULL;
 
-	return &proximity_tmd4912_ops;
+	return proximity_tmd4912_attrs;
 }

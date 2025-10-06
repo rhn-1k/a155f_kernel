@@ -27,7 +27,22 @@
 #include "proximity_factory.h"
 #include "../../others/shub_panel.h"
 
-static ssize_t proximity_stk3391x_prox_trim_show(char *buf)
+#define STK33910_NAME "STK33910"
+#define STK33915_NAME "STK33915"
+#define STK_VENDOR "Sitronix"
+
+static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_PROXIMITY);
+	return sprintf(buf, "%s\n", sensor->spec.name);
+}
+
+static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", STK_VENDOR);
+}
+
+static ssize_t prox_trim_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct proximity_data *data = (struct proximity_data *)get_sensor(SENSOR_TYPE_PROXIMITY)->data;
 
@@ -93,7 +108,7 @@ static int proximity_get_setting_mode(void)
 	return 0;
 }
 
-static ssize_t proximity_stk3391x_prox_cal_store(const char *buf, size_t size)
+static ssize_t proximity_cal_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret = 0;
 	struct proximity_data *data = (struct proximity_data *)get_sensor(SENSOR_TYPE_PROXIMITY)->data;
@@ -114,15 +129,23 @@ static ssize_t proximity_stk3391x_prox_cal_store(const char *buf, size_t size)
 	return size;
 }
 
-struct proximity_factory_chipset_funcs proximity_stk3391x_ops = {
-	.prox_cal_store = proximity_stk3391x_prox_cal_store,
-	.prox_trim_show = proximity_stk3391x_prox_trim_show,
+static DEVICE_ATTR_RO(name);
+static DEVICE_ATTR_RO(vendor);
+static DEVICE_ATTR_RO(prox_trim);
+static DEVICE_ATTR(prox_cal, 0220, NULL, proximity_cal_store);
+
+static struct device_attribute *proximity_stk3391x_attrs[] = {
+	&dev_attr_name,
+	&dev_attr_vendor,
+	&dev_attr_prox_trim,
+	&dev_attr_prox_cal,
+	NULL,
 };
 
-struct proximity_factory_chipset_funcs *get_proximity_stk3391x_chipset_func(char *name)
+struct device_attribute **get_proximity_stk3391x_dev_attrs(char *name)
 {
-	if (strcmp(name, "STK33910") != 0 && strcmp(name, "STK33915") != 0)
+	if (strcmp(name, STK33910_NAME) != 0 && strcmp(name, STK33915_NAME) != 0)
 		return NULL;
 
-	return &proximity_stk3391x_ops;
+	return proximity_stk3391x_attrs;
 }

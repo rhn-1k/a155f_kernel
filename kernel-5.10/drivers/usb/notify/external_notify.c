@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (C) 2016-2023 Samsung Electronics Co. Ltd.
+ * Copyright (C) 2016-2022 Samsung Electronics Co. Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -8,7 +8,7 @@
  * (at your option) any later version.
  */
 
- /* usb notify layer v4.0 */
+ /* usb notify layer v3.7 */
 
 #define pr_fmt(fmt) "usb_notify: " fmt
 
@@ -82,7 +82,7 @@ static const char *listener_string(int  listener)
 static int create_external_notify(void)
 {
 	if (!external_notifier.call_chain_init) {
-		unl_info("%s\n", __func__);
+		pr_info("%s\n", __func__);
 		BLOCKING_INIT_NOTIFIER_HEAD
 				(&(external_notifier.notifier_call_chain));
 		external_notifier.call_chain_init = 1;
@@ -95,7 +95,7 @@ int usb_external_notify_register(struct notifier_block *nb,
 {
 	int ret = 0;
 
-	unl_info("%s: listener=(%s)%d register\n", __func__,
+	pr_info("%s: listener=(%s)%d register\n", __func__,
 			listener_string(listener), listener);
 
 	create_external_notify();
@@ -104,7 +104,7 @@ int usb_external_notify_register(struct notifier_block *nb,
 	ret = blocking_notifier_chain_register
 				(&(external_notifier.notifier_call_chain), nb);
 	if (ret < 0)
-		unl_err("%s: blocking_notifier_chain_register error(%d)\n",
+		pr_err("%s: blocking_notifier_chain_register error(%d)\n",
 				__func__, ret);
 
 	return ret;
@@ -115,14 +115,14 @@ int usb_external_notify_unregister(struct notifier_block *nb)
 {
 	int ret = 0;
 
-	unl_info("%s: listener=(%s)%d unregister\n", __func__,
+	pr_info("%s: listener=(%s)%d unregister\n", __func__,
 			listener_string(nb->priority),
 				nb->priority);
 
 	ret = blocking_notifier_chain_unregister
 				(&(external_notifier.notifier_call_chain), nb);
 	if (ret < 0)
-		unl_err("%s: blocking_notifier_chain_unregister error(%d)\n",
+		pr_err("%s: blocking_notifier_chain_unregister error(%d)\n",
 				__func__, ret);
 	DESTROY_EXTERNAL_NOTIFY_BLOCK(nb);
 
@@ -134,7 +134,7 @@ int send_external_notify(unsigned long cmd, int data)
 {
 	int ret = 0;
 
-	unl_info("%s: cmd=%s(%lu), data=%d\n", __func__, cmd_string(cmd),
+	pr_info("%s: cmd=%s(%lu), data=%d\n", __func__, cmd_string(cmd),
 						cmd, data);
 
 	create_external_notify();
@@ -146,14 +146,14 @@ int send_external_notify(unsigned long cmd, int data)
 	switch (ret) {
 	case NOTIFY_STOP_MASK:
 	case NOTIFY_BAD:
-		unl_err("%s: notify error occur(0x%x)\n", __func__, ret);
+		pr_err("%s: notify error occur(0x%x)\n", __func__, ret);
 		break;
 	case NOTIFY_DONE:
 	case NOTIFY_OK:
-		unl_info("%s: notify done(0x%x)\n", __func__, ret);
+		pr_info("%s: notify done(0x%x)\n", __func__, ret);
 		break;
 	default:
-		unl_info("%s: notify status unknown(0x%x)\n", __func__, ret);
+		pr_info("%s: notify status unknown(0x%x)\n", __func__, ret);
 		break;
 	}
 
@@ -163,7 +163,7 @@ EXPORT_SYMBOL(send_external_notify);
 
 void external_notifier_init(void)
 {
-	unl_info("%s\n", __func__);
+	pr_info("%s\n", __func__);
 	create_external_notify();
 }
 EXPORT_SYMBOL(external_notifier_init);

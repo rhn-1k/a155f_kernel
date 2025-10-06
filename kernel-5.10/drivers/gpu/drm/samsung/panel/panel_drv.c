@@ -30,7 +30,6 @@
 #include <video/mipi_display.h>
 #include <linux/sec_panel_notifier_v2.h>
 #include <linux/list_sort.h>
-#include <linux/pinctrl/consumer.h>
 #include "panel_kunit.h"
 #include "kernel/irq/internals.h"
 #include "panel_modes.h"
@@ -46,7 +45,6 @@
 #include "panel_obj.h"
 #include "panel_function.h"
 #include "panel_firmware.h"
-#include "panel_wrapper.h"
 #include "maptbl.h"
 
 #include "dpui.h"
@@ -80,11 +78,7 @@
 #endif
 
 #if IS_ENABLED(CONFIG_INPUT_SEC_NOTIFIER)
-#if IS_ENABLED(CONFIG_SEC_INPUT_HEADER)
-#include <linux/input/sec_input.h>
-#else
 #include <drivers/input/sec_input/sec_input.h>
-#endif
 #endif
 
 #if defined(CONFIG_USDM_PANEL_FREQ_HOP)
@@ -235,13 +229,6 @@ static struct panel_prop_enum_item gct_pattern_enum_items[] = {
 };
 #endif
 
-static struct panel_prop_enum_item dsi_op_mode_enum_items[] = {
-	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(DSI_OP_MODE_NONE),
-	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(DSI_OP_MODE_VDO),
-	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(DSI_OP_MODE_CMD),
-	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(DSI_OP_MODE_VHM),
-};
-
 static struct panel_prop_list panel_drv_property_array[] = {
 	/* enum property */
 	__PANEL_PROPERTY_ENUM_INITIALIZER(PANEL_PROPERTY_PANEL_STATE,
@@ -313,14 +300,6 @@ static struct panel_prop_list panel_drv_property_array[] = {
 	__PANEL_PROPERTY_RANGE_INITIALIZER(PANEL_PROPERTY_FD_ENABLED,
 			0, 0, 1),
 #endif
-	__PANEL_PROPERTY_RANGE_INITIALIZER(PANEL_PROPERTY_PANEL_REFRESH_TE_HW_SKIP_COUNT,
-			0, 0, 0xFF),
-	__PANEL_PROPERTY_RANGE_INITIALIZER(PANEL_PROPERTY_FIRMWARE_UPDATE_INDEX,
-			0, 0, 0xFF),
-	__PANEL_PROPERTY_RANGE_INITIALIZER(PANEL_PROPERTY_FREQ_STEP,
-			0, 0, 3),
-	__PANEL_PROPERTY_ENUM_INITIALIZER(PANEL_PROPERTY_DSI_OP_MODE,
-			DSI_OP_MODE_NONE, dsi_op_mode_enum_items),
 };
 
 int panel_set_property(struct panel_device *panel,
@@ -350,8 +329,6 @@ int panel_set_property(struct panel_device *panel,
 		propname = PANEL_PROPERTY_PANEL_REFRESH_RATE;
 	else if (property == &panel->panel_data.props.vrr_mode)
 		propname = PANEL_PROPERTY_PANEL_REFRESH_MODE;
-	else if (property == &panel->panel_data.props.vrr_te_hw_skip_count)
-		propname = PANEL_PROPERTY_PANEL_REFRESH_TE_HW_SKIP_COUNT;
 	else if (property == &panel->panel_data.props.vrr_origin_fps)
 		propname = PANEL_PROPERTY_PREV_PANEL_REFRESH_RATE;
 	else if (property == &panel->panel_data.props.vrr_origin_mode)
@@ -394,8 +371,6 @@ int panel_set_property(struct panel_device *panel,
 #endif
 	else if (property == &panel->panel_data.props.mres_updated)
 		propname = PANEL_PROPERTY_RESOLUTION_CHANGED;
-	else if (property == &panel->panel_data.props.dsi_op_mode)
-		propname = PANEL_PROPERTY_DSI_OP_MODE;
 
 	if (!propname) {
 		panel_err("unknown property\n");
@@ -497,14 +472,6 @@ static int get_boot_panel_id(struct panel_device *panel)
 		return -ENODEV;
 
 	return panel->boot_panel_id;
-}
-
-__visible_for_testing int debug;
-module_param(debug, int, 0600);
-
-bool module_param_debug_is_enabled(enum mcd_panel_debug_sel sel)
-{
-	return ((debug & (1 << sel)) != 0);
 }
 
 static bool panel_is_detected_in_lk(struct panel_device *panel)
@@ -1303,8 +1270,8 @@ static void panel_init_clock_info(struct panel_device *panel)
 	props = &panel->panel_data.props;
 	ddi_props = &panel->panel_data.ddi_props;
 
-	panel_set_property(panel, &props->dsi_freq, ddi_props->dft_dsi_freq);
-	panel_set_property(panel, &props->osc_freq, ddi_props->dft_osc_freq);
+	props->dsi_freq = ddi_props->dft_dsi_freq;
+	props->osc_freq = ddi_props->dft_osc_freq;
 }
 
 int __set_panel_fast_discharge(struct panel_device *panel, bool onoff)
@@ -1334,32 +1301,6 @@ int __set_panel_elvxx_power_off(struct panel_device *panel)
 	panel_info("done %d\n", ret);
 	return 0;
 }
-
-#ifdef CONFIG_USDM_PANEL_FIRMWARE_UPDATE
-int panel_firmware_info_print(struct panel_device *panel)
-{
-	struct ddi_ops *ops = &panel->panel_data.ddi_ops;
-
-	if (ops->firmware_info_print) {
-		return ops->firmware_info_print(panel, NULL);
-	}
-
-	panel_info("firmware_info_print ops is not defined.\n");
-	return 0;
-}
-
-int panel_firmware_update(struct panel_device *panel)
-{
-	struct ddi_ops *ops = &panel->panel_data.ddi_ops;
-
-	if (ops->firmware_update) {
-		return ops->firmware_update(panel, NULL);
-	}
-
-	panel_info("firmware_update ops is not defined.\n");
-	return 0;
-}
-#endif
 
 int __set_panel_power(struct panel_device *panel, int power)
 {
@@ -1508,11 +1449,6 @@ static int __panel_seq_init(struct panel_device *panel)
 	if (ret < 0 && ret != -ENODATA)
 		panel_err("failed to panel_power_init\n");
 
-	if (check_seqtbl_exist(panel, PANEL_PRE_INIT_SEQ)) {
-		ret = panel_do_seqtbl_by_name_nolock(panel, PANEL_PRE_INIT_SEQ);
-		if (ret)
-			panel_err("failed to panel-pre-init seq\n");
-	}
 	panel_mutex_unlock(&panel->op_lock);
 	panel_mutex_unlock(&panel_bl->lock);
 
@@ -1578,9 +1514,6 @@ static int __panel_seq_init(struct panel_device *panel)
 	time_diff = ktime_to_ms(ktime_sub(ktime_get(), timestamp));
 	panel_info("check disp det .. success: took %llu ms\n", time_diff);
 
-#ifdef CONFIG_USDM_PANEL_FIRMWARE_UPDATE
-	ret = panel_firmware_info_print(panel);
-#endif
 	__set_panel_fast_discharge(panel, true);
 
 	panel_enable_irq(panel, PANEL_IRQ_ALL_WITHOUT_CONN_DET);
@@ -3113,11 +3046,10 @@ __visible_for_testing int panel_prepare(struct panel_device *panel, struct commo
 
 #if defined(CONFIG_USDM_PANEL_JSON)
 	snprintf(firmware_name, SZ_128, "%s.json", cpi->name);
-	ret = panel_firmware_load(panel,
-			module_param_debug_is_enabled(DEBUG_EZOP_SKIP_VENDOR_FW) ? NULL : firmware_name,
-			module_param_debug_is_enabled(DEBUG_EZOP_SKIP_BUILTIN_FW) ? NULL : cpi->ezop_json,
-			&new_pnobj_list);
-	panel_info("firmware loading done %d\n", ret);
+	ret = panel_firmware_load(panel, firmware_name,
+			cpi->ezop_json, &new_pnobj_list);
+	if (ret == 0)
+		panel_info("firmware loading done\n");
 #endif
 
 	if (is_panel_firmwarel_load_success(panel)) {
@@ -3733,28 +3665,6 @@ int panel_update_dim_type(struct panel_device *panel, u32 dim_type)
 }
 #endif
 
-int panel_dt_lut_get_option_value(struct panel_device *panel, const char *option_name)
-{
-	struct device_node *options_np;
-	int option_value = 0;
-	int ret = 0;
-
-	options_np = panel->options_node;
-	if (!options_np) {
-		panel_dbg("options node is not found\n");
-		return -ENODEV;
-	}
-
-	ret = of_property_read_u32(options_np, option_name, &option_value);
-	if (ret < 0) {
-		panel_dbg("option %s is not found in options node\n", option_name);
-		return -ENODATA;
-	}
-	
-	panel_dbg("option %s: %d\n", option_name, option_value);
-	return option_value;
-}
-
 int panel_reprobe(struct panel_device *panel)
 {
 	struct common_panel_info *info;
@@ -3789,7 +3699,7 @@ int panel_reprobe(struct panel_device *panel)
 		ret = copr_prepare(panel, info->copr_data);
 		if (unlikely(ret < 0)) {
 			panel_err("failed to init copr driver\n");
-			PANEL_BUG();
+			BUG();
 			return -ENODEV;
 		}
 #endif
@@ -4039,10 +3949,6 @@ static void panel_condition_handler(struct work_struct *work)
 	atomic_set(&w->running, 1);
 	panel_mutex_lock(&w->lock);
 	panel_info("%s\n", condition->str_state[condition->check_state]);
-	if (panel->state.disp_on == PANEL_DISPLAY_OFF) {
-		clear_check_wq_var(condition);
-		goto exit;
-	}
 
 	switch (condition->check_state) {
 	case PRINT_NORMAL_PANEL_INFO:
@@ -4072,7 +3978,6 @@ static void panel_condition_handler(struct work_struct *work)
 		clear_check_wq_var(condition);
 		break;
 	}
-exit:
 	panel_mutex_unlock(&w->lock);
 	atomic_set(&w->running, 0);
 	panel_wake_unlock(panel);
@@ -4231,7 +4136,6 @@ static int panel_init_property(struct panel_device *panel)
 #if defined(CONFIG_USDM_FACTORY_FAST_DISCHARGE)
 	panel_set_property(panel, &panel_data->props.enable_fd, 1);
 #endif
-	panel_set_property(panel, &panel_data->props.dsi_op_mode, DSI_OP_MODE_NONE);
 
 #ifdef CONFIG_USDM_FACTORY
 	/*
@@ -4268,9 +4172,7 @@ static int panel_set_node_from_panel_lut(struct panel_device *panel)
 	}
 #endif
 	panel->ap_vendor_setting_node = panel_lut->ap_vendor_setting_node;
-	panel->options_node = panel_lut->options_node;
 	panel->panel_data.dqe_suffix = panel_lut->dqe_suffix;
-	panel->panel_data.aiqe_suffix = panel_lut->aiqe_suffix;
 #if defined(CONFIG_USDM_PANEL_FREQ_HOP)
 	panel->freq_hop_node = panel_lut->freq_hop_node;
 #endif
@@ -4290,7 +4192,7 @@ __visible_for_testing int panel_create_lcd_class(void)
 		return 0;
 	}
 
-	lcd_class = class_create_wrapper(THIS_MODULE, "lcd");
+	lcd_class = class_create(THIS_MODULE, "lcd");
 	if (IS_ERR_OR_NULL(lcd_class)) {
 		panel_err("failed to create lcd class\n");
 		return -EINVAL;
@@ -4447,7 +4349,7 @@ int panel_probe(struct panel_device *panel)
 	ret = copr_prepare(panel, info->copr_data);
 	if (unlikely(ret < 0)) {
 		panel_err("failed to init copr driver\n");
-		PANEL_BUG();
+		BUG();
 		return -ENODEV;
 	}
 #endif
@@ -4471,7 +4373,7 @@ int panel_probe(struct panel_device *panel)
 	ret = panel_prepare(panel, info);
 	if (unlikely(ret < 0)) {
 		panel_err("failed to prepare common panel driver\n");
-		PANEL_BUG();
+		BUG();
 		return -ENODEV;
 	}
 
@@ -4483,29 +4385,21 @@ int panel_probe(struct panel_device *panel)
 #endif
 
 #ifdef CONFIG_USDM_PANEL_SELF_DISPLAY
-	/* check options node in panel-lut DT, do not probe aod_drv when 'probe-self-display' property was set as 0 */
-	if (panel_dt_lut_get_option_value(panel, "probe-self-display") != 0) {
-		ret = aod_drv_probe(panel, info->aod_tune);
-		if (unlikely(ret)) {
-			panel_err("failed to probe aod driver\n");
-			PANEL_BUG();
-			return -ENODEV;
-		}
-	} else
-		panel_info("probe-self-display was set to 0 in dt\n");
+	ret = aod_drv_probe(panel, info->aod_tune);
+	if (unlikely(ret)) {
+		panel_err("failed to probe aod driver\n");
+		BUG();
+		return -ENODEV;
+	}
 #endif
 
 #ifdef CONFIG_USDM_PANEL_COPR
-	/* check options node in panel-lut DT, do not probe copr when 'probe-copr' property was set as 0 */
-	if (panel_dt_lut_get_option_value(panel, "probe-copr") != 0) {
-		ret = copr_probe(panel, info->copr_data);
-		if (unlikely(ret)) {
-			panel_err("failed to probe copr driver\n");
-			PANEL_BUG();
-			return -ENODEV;
-		}
-	} else
-		panel_info("probe-copr was set to 0 in dt\n");
+	ret = copr_probe(panel, info->copr_data);
+	if (unlikely(ret)) {
+		panel_err("failed to probe copr driver\n");
+		BUG();
+		return -ENODEV;
+	}
 #endif
 
 #ifdef CONFIG_USDM_PANEL_DDI_FLASH
@@ -4540,15 +4434,11 @@ int panel_probe(struct panel_device *panel)
 	}
 
 #ifdef CONFIG_USDM_MDNIE
-/* check options node in panel-lut DT, do not probe mdnie when 'probe-mdnie' property was set as 0 */
-	if (panel_dt_lut_get_option_value(panel, "probe-mdnie") != 0) {
-		ret = mdnie_probe(&panel->mdnie, info->mdnie_tune);
-		if (unlikely(ret)) {
-			panel_err("failed to probe mdnie driver\n");
-			return -ENODEV;
-		}
-	} else
-		panel_info("probe-mdnie was set to 0 in dt\n");
+	ret = mdnie_probe(&panel->mdnie, info->mdnie_tune);
+	if (unlikely(ret)) {
+		panel_err("failed to probe mdnie driver\n");
+		return -ENODEV;
+	}
 #endif
 
 #ifdef CONFIG_USDM_PANEL_MAFPC
@@ -4631,10 +4521,6 @@ int panel_probe(struct panel_device *panel)
 		panel_err("failed to create debugfs\n");
 		return ret;
 	}
-#endif
-
-#ifdef CONFIG_USDM_PANEL_FIRMWARE_UPDATE
-	ret = panel_firmware_update(panel);
 #endif
 
 	panel->cpi = info;
@@ -4989,9 +4875,9 @@ __visible_for_testing int panel_lock_from_commit(struct panel_device *panel)
 {
 	panel_info("++\n");
 	mutex_lock(&panel->panel_mutex_big_lock);
-	atomic_set(&panel->commit_thread_pid, current->pid);
+	panel->commit_thread_pid = current->pid;
 	panel->big_lock = true;
-	panel_info("-- (%d)\n", atomic_read(&panel->commit_thread_pid));
+	panel_info("--\n");
 
 	return 0;
 }
@@ -5003,26 +4889,11 @@ __visible_for_testing int panel_unlock_from_commit(struct panel_device *panel)
 
 	panel_info("++\n");
 	panel->big_lock = false;
-	atomic_set(&panel->commit_thread_pid, 0);
+	panel->commit_thread_pid = 0;
 	mutex_unlock(&panel->panel_mutex_big_lock);
 	panel_info("--\n");
 
 	return 0;
-}
-
-__visible_for_testing int panel_set_lock_pid(struct panel_device *panel, int pid)
-{
-	int old_pid = 0;
-
-	if (!panel->big_lock)
-		return 0;
-
-	panel_info("++\n");
-	old_pid = atomic_read(&panel->commit_thread_pid);
-	atomic_set(&panel->commit_thread_pid, pid);
-	panel_info("-- (%d)->(%d)\n", old_pid, atomic_read(&panel->commit_thread_pid));
-
-	return old_pid;
 }
 #endif
 
@@ -5048,9 +4919,15 @@ __visible_for_testing int panel_reset_lp11(struct panel_device *panel)
 	prev_state = panel_get_cur_state(panel);
 
 	if (panel_get_cur_state(panel) == PANEL_STATE_ON) {
+		panel_mutex_lock(&panel_bl->lock);
+		panel_mutex_lock(&panel->op_lock);
+
 		ret = panel_drv_power_ctrl_execute(panel, "panel_reset_lp11");
 		if (ret < 0 && ret != -ENODATA)
 			panel_err("failed to panel_reset_lp11\n");
+
+		panel_mutex_unlock(&panel->op_lock);
+		panel_mutex_unlock(&panel_bl->lock);
 	}
 
 	return 0;
@@ -5081,9 +4958,15 @@ __visible_for_testing int panel_reset_disable(struct panel_device *panel)
 	prev_state = panel_get_cur_state(panel);
 
 	if (panel_get_cur_state(panel) == PANEL_STATE_ON) {
+		panel_mutex_lock(&panel_bl->lock);
+		panel_mutex_lock(&panel->op_lock);
+
 		ret = panel_drv_power_ctrl_execute(panel, "panel_reset_disable");
 		if (ret < 0 && ret != -ENODATA)
 			panel_err("failed to panel_reset_lp11\n");
+
+		panel_mutex_unlock(&panel->op_lock);
+		panel_mutex_unlock(&panel_bl->lock);
 	}
 
 	return 0;
@@ -5169,7 +5052,7 @@ __visible_for_testing int panel_sleep_out(struct panel_device *panel)
 				panel_enable_irq(panel, PANEL_IRQ_ALL_WITHOUT_CONN_DET);
 			} else {
 				panel_err("failed to panel init seq\n");
-				PANEL_BUG();
+				BUG();
 			}
 		}
 		retry = 3;
@@ -5516,57 +5399,42 @@ int panel_display_mode_find_panel_mode(struct panel_device *panel,
 	return find_panel_mode_by_common_panel_display_mode(panel, cpdm);
 }
 
-static struct panel_display_mode *panel_get_default_pdm(struct panel_device *panel)
+int panel_display_mode_get_native_mode(struct panel_device *panel)
 {
 	struct panel_display_modes *panel_modes =
 		panel->panel_modes;
+	struct panel_display_mode *pdm;
+	int panel_mode;
 
 	if (!panel_display_mode_is_supported(panel)) {
 		panel_err("panel_display_mode not supported\n");
-		return NULL;
+		return -EINVAL;
 	}
 
 	if (!panel_modes) {
 		panel_err("panel_modes is null\n");
-		return NULL;
+		return -EINVAL;
 	}
 
 	if (panel_modes->num_modes <= 0) {
 		panel_err("panel_modes->num_modes is 0\n");
-		return NULL;
+		return -EINVAL;
 	}
 
 	if (panel_modes->native_mode >=
 			panel_modes->num_modes) {
 		panel_err("panel_modes->native_mode(%d) is out of range\n",
 				panel_modes->native_mode);
-		return NULL;
+		return -EINVAL;
 	}
 
-	return panel_modes->modes[panel_modes->native_mode];
-}
-
-int panel_display_mode_get_native_mode(struct panel_device *panel)
-{
-	struct panel_display_mode *pdm;
-	int panel_mode;
-	int ret;
-
-	pdm = panel_get_default_pdm(panel);
-	if (!pdm)
-		return -EINVAL;
-
+	pdm = panel_modes->modes[panel_modes->native_mode];
 	panel_mode =
 		panel_display_mode_find_panel_mode(panel, pdm);
 	if (panel_mode < 0) {
 		panel_err("could not find panel_display_mode(%s)\n", pdm->name);
 		return -EINVAL;
 	}
-
-	ret = panel_set_property_value(panel,
-		PANEL_PROPERTY_DSI_OP_MODE, panel_get_dsi_op_mode(panel, pdm));
-	if (ret < 0)
-		panel_err("failed to set %s\n", PANEL_PROPERTY_DSI_OP_MODE);
 
 	return panel_mode;
 }
@@ -5736,8 +5604,6 @@ static int panel_update_display_mode_props(struct panel_device *panel, int panel
 	/* update vrr data */
 	panel_set_property(panel, &props->vrr_fps, vrr->fps);
 	panel_set_property(panel, &props->vrr_mode, vrr->mode);
-	panel_set_property(panel, &props->vrr_te_hw_skip_count, vrr->te_hw_skip_count);
-
 	props->vrr_idx = vrr_idx;
 
 	return 0;
@@ -5850,11 +5716,6 @@ static int panel_set_display_mode(struct panel_device *panel, void *arg)
 		goto out;
 	}
 
-	ret = panel_set_property_value(panel,
-		PANEL_PROPERTY_DSI_OP_MODE, panel_get_dsi_op_mode(panel, pdm));
-	if (ret < 0)
-		panel_err("failed to set %s\n", PANEL_PROPERTY_DSI_OP_MODE);
-
 	ret = panel_set_display_mode_nolock(panel, panel_mode);
 	if (ret < 0)
 		panel_err("failed to panel_set_display_mode_nolock\n");
@@ -5894,26 +5755,6 @@ int panel_update_display_mode(struct panel_device *panel)
 }
 #endif /* CONFIG_USDM_PANEL_DISPLAY_MODE */
 
-static int panel_execute_sequence(struct panel_device *panel, void *arg)
-{
-	return panel_do_seqtbl_by_name(panel, (char *)arg);
-}
-
-__visible_for_testing int panel_get_smooth_dim(struct panel_device *panel)
-{
-	struct panel_bl_device *panel_bl;
-
-	if (!panel)
-		return -EINVAL;
-
-	panel_bl = &panel->panel_bl;
-
-	if (!panel_bl)
-		return -EINVAL;
-
-	return panel_bl_get_smooth_transition_sysfs_req(panel_bl);
-}
-
 static int panel_set_ffc_seq(struct panel_device *panel, u32 dsi_freq)
 {
 	int ret;
@@ -5921,7 +5762,7 @@ static int panel_set_ffc_seq(struct panel_device *panel, u32 dsi_freq)
 		&panel->panel_data.props;
 	u32 origin = props->dsi_freq;
 
-	if ((props->dsi_freq == 0) || (!check_seqtbl_exist(panel, PANEL_FFC_SEQ)) ||
+	if ((props->dsi_freq == 0) ||
 		(props->dsi_freq == dsi_freq))
 		return 0;
 
@@ -6113,21 +5954,8 @@ static int panel_set_mask_layer(struct panel_device *panel, void *arg)
 		return -EINVAL;
 	}
 
-
-	/*
-	 * - Do not get BigLock in After scenario
-	 * 	Deadlock case:
-	 * 	1. Commit Thread : get BigLock -> check mask status -> wait *mask after WQ
-	 * 	2. *Mask after WQ : try to get BigLock but, 1.commit thread already got.
-	 */
-
-	if ((req_data->req == MASK_LAYER_ON_AFTER) || (req_data->req == MASK_LAYER_OFF_AFTER)) {
-		mutex_lock(&panel_bl->lock.base);
-		mutex_lock(&panel->op_lock.base);
-	} else {
-		panel_mutex_lock(&panel_bl->lock);
-		panel_mutex_lock(&panel->op_lock);
-	}
+	panel_mutex_lock(&panel_bl->lock);
+	panel_mutex_lock(&panel->op_lock);
 
 	if (panel_get_cur_state(panel) == PANEL_STATE_ALPM) {
 		tx_cmd = false;
@@ -6136,7 +5964,6 @@ static int panel_set_mask_layer(struct panel_device *panel, void *arg)
 
 	switch (req_data->req) {
 	case MASK_LAYER_ON_BEFORE:
-		panel_bl->props.smooth_transition_mask_layer_req = SMOOTH_TRANS_OFF;
 		panel_bl_set_property(panel_bl, &panel_bl->props.smooth_transition, SMOOTH_TRANS_OFF);
 
 		if (check_seqtbl_exist(panel, PANEL_MASK_LAYER_STOP_DIMMING_SEQ) && tx_cmd)
@@ -6176,37 +6003,19 @@ static int panel_set_mask_layer(struct panel_device *panel, void *arg)
 		panel_bl->props.mask_layer_br_actual = 0;
 		sysfs_notify(&panel->lcd_dev->kobj, NULL, "actual_mask_brightness");
 
-		panel_bl->props.smooth_transition_mask_layer_req = SMOOTH_TRANS_ON;
-		panel_bl_set_property(panel_bl, &panel_bl->props.smooth_transition, panel_bl_get_smooth_dim_request(panel_bl));
+		panel_bl_set_property(panel_bl, &panel_bl->props.smooth_transition, SMOOTH_TRANS_ON);
 		break;
 
 	default:
 		panel_err("Invalid req: %d\n", req_data->req);
 	}
 
-	if ((req_data->req == MASK_LAYER_ON_AFTER) || (req_data->req == MASK_LAYER_OFF_AFTER)) {
-		mutex_unlock(&panel->op_lock.base);
-		mutex_unlock(&panel_bl->lock.base);
-	} else {
-		panel_mutex_unlock(&panel->op_lock);
-		panel_mutex_unlock(&panel_bl->lock);
-	}
+	panel_mutex_unlock(&panel->op_lock);
+	panel_mutex_unlock(&panel_bl->lock);
 
 	return ret;
 }
 #endif
-
-static int panel_set_freq_step(struct panel_device *panel, unsigned int index)
-{
-	int ret = 0;
-
-	panel_info("%s ++\n", __func__);
-	ret = panel_set_property_value(panel, PANEL_PROPERTY_FREQ_STEP, index);
-	ret = panel_do_seqtbl_by_name(panel, PANEL_SET_FREQ_STEP);
-	panel_info("%s --\n", __func__);
-
-	return ret;
-}
 
 __visible_for_testing int panel_first_frame(struct panel_device *panel)
 {
@@ -6801,12 +6610,7 @@ static int panel_parse_panel_lookup(struct panel_device *panel)
 			panel_err("failed to get phandle of panel %s\n", pp->name);
 			return -EINVAL;
 		}
-
-		/* Use panel-name property when it is defined. If not exists, use node's name. */
-		ret = of_property_read_string(panel_np, "panel-name", &lut->name);
-		if (ret != 0 || lut->name == NULL)
-			lut->name = panel_np->name;
-
+		lut->name = panel_np->name;
 		node = of_parse_phandle(panel_np, "ap-vendor-setting", 0);
 		if (!node) {
 			panel_err("failed to get phandle of ap-vendor-setting\n");
@@ -6836,20 +6640,6 @@ static int panel_parse_panel_lookup(struct panel_device *panel)
 			panel_warn("dqe-suffix is empty\n");
 		} else {
 			panel_info("found dqe-suffix:%s\n", lut->dqe_suffix);
-		}
-
-		ret = of_property_read_string(panel_np, "aiqe-suffix", &lut->aiqe_suffix);
-		if (ret != 0 || lut->aiqe_suffix == NULL) {
-			panel_warn("aiqe-suffix is empty\n");
-		} else {
-			panel_info("found aiqe-suffix:%s\n", lut->aiqe_suffix);
-		}
-
-		node = of_parse_phandle(panel_np, "options", 0);
-		if (node) {
-			panel_info("found options node in DT\n");
-			lut->options_node = node;
-			of_node_put(node);
 		}
 
 #if defined(CONFIG_USDM_PANEL_FREQ_HOP)
@@ -6905,7 +6695,7 @@ static int panel_parse_panel_lookup(struct panel_device *panel)
 			list_add_tail(&id_mask->head, &lut->id_mask_list);
 		}
 		list_add_tail(&lut->head, &panel->panel_lut_list);
-		panel_info("%s node:\"%s\" name:\"%s\"\n", pp->name, panel_np->name, lut->name);
+		panel_info("%s name:\"%s\"\n", pp->name, lut->name);
 		print_panel_lut(lut);
 		of_node_put(panel_np);
 	}
@@ -7569,7 +7359,6 @@ struct panel_drv_funcs panel_drv_funcs = {
 #if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
 	.lock = panel_lock_from_commit,
 	.unlock = panel_unlock_from_commit,
-	.set_lock_pid = panel_set_lock_pid,
 #endif
 
 	.debug_dump = panel_debug_dump,
@@ -7596,10 +7385,6 @@ struct panel_drv_funcs panel_drv_funcs = {
 
 	.set_brightness = panel_set_brightness,
 	.set_uevent_recovery_state = panel_set_uevent_recovery_state,
-	.execute_sequence = panel_execute_sequence,
-
-	.get_smooth_dim = panel_get_smooth_dim,
-	.set_freq_step = panel_set_freq_step,
 };
 
 int panel_device_init(struct panel_device *panel)
@@ -7617,10 +7402,6 @@ int panel_device_init(struct panel_device *panel)
 	mutex_init(&panel->panel_mutex_big_lock);
 #ifdef CONFIG_USDM_PANEL_COPR
 	panel_mutex_init(panel, &panel->copr.lock);
-#endif
-
-#if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
-	atomic_set(&panel->commit_thread_pid, 0);
 #endif
 
 	INIT_LIST_HEAD(&panel->command_initdata_list);
@@ -7848,8 +7629,6 @@ static int panel_drv_probe(struct platform_device *pdev)
 	if (!panel)
 		return -ENOMEM;
 
-	panel_log_level = module_param_debug_is_enabled(DEBUG_PANEL_LOG_LEVEL_HIGH) ? (7) : panel_log_level;
-	panel_cmd_log = module_param_debug_is_enabled(DEBUG_CMD_LOG_ENABLE) ? (3) : panel_cmd_log;
 	panel->id = -1;
 	panel->dev = &pdev->dev;
 	platform_set_drvdata(pdev, panel);

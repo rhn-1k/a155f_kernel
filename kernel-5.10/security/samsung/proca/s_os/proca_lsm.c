@@ -21,10 +21,6 @@
 #include <linux/proca.h>
 #include <linux/cdev.h>
 
-#include "five_hooks.h"
-#include "five_state.h"
-
-#include "proca_audit.h"
 #include "proca_identity.h"
 #include "proca_certificate.h"
 #include "proca_task_descr.h"
@@ -35,6 +31,8 @@
 #include "proca_storage.h"
 
 #define PROCA_DEV_NAME "proca_config"
+
+#include "five_hooks.h"
 
 static void proca_task_free_hook(struct task_struct *task);
 
@@ -63,16 +61,11 @@ static void proca_hook_file_skipped(struct task_struct *task,
 				enum task_integrity_value tint_value,
 				struct file *file);
 
-static void proca_hook_reset_integrity(struct task_struct *task,
-				struct file *file,
-				enum task_integrity_reset_cause cause);
-
 static struct five_hook_list five_ops[] = {
 	FIVE_HOOK_INIT(task_forked, proca_hook_task_forked),
 	FIVE_HOOK_INIT(file_processed, proca_hook_file_processed),
 	FIVE_HOOK_INIT(file_signed, proca_hook_file_signed),
 	FIVE_HOOK_INIT(file_skipped, proca_hook_file_skipped),
-	FIVE_HOOK_INIT(integrity_reset2, proca_hook_reset_integrity),
 };
 
 static struct proca_table g_proca_table;
@@ -265,15 +258,6 @@ static void proca_task_free_hook(struct task_struct *task)
 	destroy_proca_task_descr(target_task_descr);
 }
 
-static void proca_hook_reset_integrity(struct task_struct *task,
-			struct file *file,
-			enum task_integrity_reset_cause cause)
-{
-	if (proca_table_get_by_task(&g_proca_table, task))
-		proca_audit_err(task, file, "proca_reset_integrity",
-				task_integrity_reset_str(cause));
-}
-
 #ifndef LINUX_LSM_SUPPORTED
 void proca_compat_task_free_hook(struct task_struct *task)
 {
@@ -289,7 +273,7 @@ int proca_get_task_cert(const struct task_struct *task,
 {
 	struct proca_task_descr *task_descr = NULL;
 
-	PROCA_BUG_ON(!task || !cert || !cert_size);
+	BUG_ON(!task || !cert || !cert_size);
 
 	task_descr = proca_table_get_by_task(&g_proca_table, task);
 	if (!task_descr)
@@ -373,9 +357,7 @@ static __init int proca_module_init(void)
 	if (ret)
 		return ret;
 
-	ret = proca_table_init(&g_proca_table);
-	if (ret)
-		return ret;
+	proca_table_init(&g_proca_table);
 
 	ret = init_proca_storage();
 	if (ret)

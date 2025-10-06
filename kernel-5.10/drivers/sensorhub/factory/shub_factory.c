@@ -16,8 +16,7 @@
 #include "shub_factory.h"
 #include "../utility/shub_utility.h"
 
-
-typedef void (*init_sensor_factory)(bool en, int mode);
+typedef void (*init_sensor_factory)(bool en);
 init_sensor_factory init_sensor_factory_funcs[] = {
 	initialize_accelerometer_factory,
 	initialize_magnetometer_factory,
@@ -26,8 +25,6 @@ init_sensor_factory init_sensor_factory_funcs[] = {
 	initialize_proximity_factory,
 	initialize_pressure_factory,
 	initialize_flip_cover_detector_factory,
-	initialize_accelerometer_sub_factory,
-	initialize_gyroscope_sub_factory,
 };
 
 int initialize_factory(void)
@@ -35,7 +32,7 @@ int initialize_factory(void)
 	uint64_t i;
 
 	for (i = 0; i < ARRAY_SIZE(init_sensor_factory_funcs); i++)
-		init_sensor_factory_funcs[i](true, INIT_FACTORY_MODE_NONE);
+		init_sensor_factory_funcs[i](true);
 
 	return 0;
 }
@@ -45,14 +42,6 @@ void remove_factory(void)
 	uint64_t i;
 
 	for (i = 0; i < ARRAY_SIZE(init_sensor_factory_funcs); i++)
-		init_sensor_factory_funcs[i](false, INIT_FACTORY_MODE_REMOVE_ALL);
+		init_sensor_factory_funcs[i](false);
 
-}
-
-void remove_empty_factory(void)
-{
-	uint64_t i;
-
-	for (i = 0; i < ARRAY_SIZE(init_sensor_factory_funcs); i++)
-		init_sensor_factory_funcs[i](false, INIT_FACTORY_MODE_REMOVE_EMPTY);
 }

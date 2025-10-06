@@ -8,7 +8,6 @@
 
 #include <linux/slab.h>
 #include <linux/string.h>
-
 #include "include/defex_debug.h"
 #include "include/ptree.h"
 
@@ -111,7 +110,7 @@ static const unsigned char *pptree_bytearray(const struct PPTree *tree, int i,
 		defex_log_warn("Ptree: Bad bytearray index: %d (max %d)", i, tree->bTable.size);
 		if (length)
 			*length = 0;
-		return (const unsigned char *)"";
+		return "";
 	}
 	index = charp2UInt(bTable + i * bcs, bcs);
 	if (length) {
@@ -253,8 +252,7 @@ int pptree_find(const struct PPTree *tree, const char **path, int pathLen,
 		return 0;
 	for (depth = 0; depth < pathLen; ++depth) {
 		const char *s;
-		int rCmp, sIndex;
-		unsigned int i;
+		int rCmp, sIndex, i;
 		unsigned int itemSize, childCount;
 
 		load_node_prologue(tree, &p, &itemSize, &dataTypes, &childCount);
@@ -299,28 +297,30 @@ int pptree_find(const struct PPTree *tree, const char **path, int pathLen,
 		p = tree->nodes.root + charp2UInt(pFound,
 						  tree->nodes.offsetSize);
 	}
-	if (ctx->types & PTREE_FIND_PEEK)
-		/* Don't advance context, just store it here */
-		ctx->lastPeeked = p;
-	else {
-		ctx->last = p;
-		ctx->lastPeeked = 0;
+	if (ctx) {
+		if (ctx->types & PTREE_FIND_PEEK)
+			/* Don't advance context, just store it here */
+			ctx->lastPeeked = p;
+		else {
+			ctx->last = p;
+			ctx->lastPeeked = 0;
+		}
+		if (dataTypes)
+			pptree_get_itemData(tree,
+					    pFound + tree->nodes.offsetSize,
+					    dataTypes, ctx);
+		else
+			/* Clear all bits for associated data */
+			ctx->types &= ~PTREE_DATA_MASK;
 	}
-	if (dataTypes)
-		pptree_get_itemData(tree,
-					pFound + tree->nodes.offsetSize,
-					dataTypes, ctx);
-	else
-		/* Clear all bits for associated data */
-		ctx->types &= ~PTREE_DATA_MASK;
 	return 1;
 }
 
 int pptree_find_path(const struct PPTree *tree, const char *path, char delim,
 		     struct PPTreeContext *ctx)
 {
-	int i, itemCount, findRes;
-	char *ppath = 0, *p, **pathItems;
+	int i, itemCount, findRes, flags = ctx->types;
+	char *ppath, *p, **pathItems;
 	const char *q, *pathItems1[1];
 
 	if (!path)
@@ -330,7 +330,6 @@ int pptree_find_path(const struct PPTree *tree, const char *path, char delim,
 		/* No path array to fill, just use last result */
 		pathItems = 0;
 		itemCount = 0;
-		//ctx->types &= ~PTREE_FIND_PEEKED;
 	} else {
 		if (!delim) {
 			/* Special case, consider the whole string as
@@ -363,10 +362,10 @@ int pptree_find_path(const struct PPTree *tree, const char *path, char delim,
 		}
 	}
 	findRes = pptree_find(tree, (const char **)pathItems, itemCount, ctx);
-	if (!(ctx->types & PTREE_FIND_PEEKED) && delim) {
-		kfree((void *)pathItems);
+	if (!(flags & PTREE_FIND_PEEKED) && delim) {
+		kfree((void *) pathItems);
+		kfree((void *) ppath);
 	}
-	kfree((void *)ppath);
 	return findRes;
 }
 
@@ -400,36 +399,6 @@ int pptree_iterate_children(const struct PPTree *tree,
 	for (ret = i = 0; i < childCount; ++i) {
 		struct PPTreeContext itemData;
 
-		memset(&itemData, 0, sizeof itemData);
-		sIndex = charp2UInt(p, tree->sTable.indexSize);
-		if (dataTypes)
-			pptree_get_itemData(tree,
-					    p + tree->nodes.offsetSize +
-					    tree->nodes.offsetSize,
-					    dataTypes, &itemData);
-		ret = (*f)(tree, (const char *)pptree_string(tree, sIndex),
-			   &itemData, data);
-		if (ret < 0)
-			return ret;
-		p += itemSize;
-	}
-	return ret;
-}
-
-int pptree_has_child(const struct PPTree *tree,
-		     struct PPTreeContext *ctx,
-		     const char *name,
-		     struct PPTreeContext *itemDataRet)
-{
-	const unsigned char *p;
-	unsigned int i, childCount, itemSize, dataTypes, sIndex;
-
-	p = tree->nodes.root + pptree_get_offset(tree, ctx);
-	load_node_prologue(tree, &p, &itemSize, &dataTypes, &childCount);
-	for (i = 0; i < childCount; ++i) {
-		struct PPTreeContext itemData;
-
-		memset(&itemData, 0, sizeof itemData);
 		sIndex = charp2UInt(p, tree->sTable.indexSize);
 		if (dataTypes)
 			pptree_get_itemData(tree,
@@ -438,14 +407,13 @@ int pptree_has_child(const struct PPTree *tree,
 					    dataTypes, &itemData);
 		else
 			itemData.types = 0;
-		if (!strcmp(name,
-			    (const char *)pptree_string(tree, sIndex))) {
-			if (itemDataRet)
-				*itemDataRet = itemData;
-			return 1;
-		}
+		ret = (*f)(tree, (const char *)pptree_string(tree, sIndex),
+			   &itemData, data);
+		if (ret < 0)
+			return ret;
+		p += itemSize;
 	}
-	return 0;
+	return ret;
 }
 
 /* Recursively traverses all children in subpath of a node given
@@ -504,3 +472,4 @@ int pptree_iterate_paths(const struct PPTree *tree,
 	return pptree_iterate_subpaths(tree, pptree_get_offset(tree, ctx),
 				       0, f, path, maxPathLen, data);
 }
+

@@ -142,15 +142,13 @@ void task_integrity_clear(struct task_integrity *tint);
 
 static inline void task_integrity_get(struct task_integrity *tint)
 {
-	if (unlikely(!atomic_read(&tint->usage_count)))
-		return;
+	BUG_ON(!atomic_read(&tint->usage_count));
 	atomic_inc(&tint->usage_count);
 }
 
 static inline void task_integrity_put(struct task_integrity *tint)
 {
-	if (unlikely(!atomic_read(&tint->usage_count)))
-		return;
+	BUG_ON(!atomic_read(&tint->usage_count));
 	if (atomic_dec_and_test(&tint->usage_count))
 		task_integrity_free(tint);
 }

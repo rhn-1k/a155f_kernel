@@ -48,7 +48,6 @@ static int sm5714_usbpd_command_to_policy(struct device *dev,
 void sm5714_usbpd_change_source_cap(int enable, int max_cur, int init)
 {
 	struct sm5714_usbpd_data *pd_data = sm5714_g_pd_data;
-	struct sm5714_usbpd_manager_data *_data = &pd_data->manager;
 
 	msg_header_type *msg_header = &pd_data->source_msg_header;
 	data_obj_type *data_obj = &pd_data->source_data_obj[0]; /* Fixed PDO */
@@ -61,35 +60,17 @@ void sm5714_usbpd_change_source_cap(int enable, int max_cur, int init)
 	}
 
 	sm5714_info("%s, en(%d), max_cur(%d) init(%d)\n", __func__, enable, max_cur, init);
-	if (_data->support_src_vpdo) {
-		if (enable == 1 || enable > 2) {
-			pd_data->thermal_state = 1;
-			msg_header->num_data_objs = 1;
-			if (max_cur > 500)
-				max_current = 500 / 10;
-			else
-				max_current = (max_cur / 10) & 0x3ff;
-			data_obj->power_data_obj.max_current = max_current;
-		} else if (enable == 2) {
-			pd_data->thermal_state = -1;
-			msg_header->num_data_objs = 2;
-		} else {
-			pd_data->thermal_state = 0;
-			msg_header->num_data_objs = 3;
-		}
+	if (enable) {
+		pd_data->thermal_state = 1;
+		msg_header->num_data_objs = 1;
+		if (max_cur > 500)
+			max_current = 500 / 10;
+		else
+			max_current = (max_cur / 10) & 0x3ff;
+		data_obj->power_data_obj.max_current = max_current;
 	} else {
-		if (enable) {
-			pd_data->thermal_state = 1;
-			msg_header->num_data_objs = 1;
-			if (max_cur > 500)
-				max_current = 500 / 10;
-			else
-				max_current = (max_cur / 10) & 0x3ff;
-			data_obj->power_data_obj.max_current = max_current;
-		} else {
-			pd_data->thermal_state = 0;
-			msg_header->num_data_objs = 2;
-		}
+		pd_data->thermal_state = 0;
+		msg_header->num_data_objs = 2;
 	}
 	if (!init)
 		sm5714_usbpd_command_to_policy(pd_data->dev, MANAGER_REQ_SRCCAP_CHANGE);
@@ -97,15 +78,7 @@ void sm5714_usbpd_change_source_cap(int enable, int max_cur, int init)
 
 void sm5714_usbpd_forced_change_srccap(int max_cur)
 {
-	struct sm5714_usbpd_data *pd_data = sm5714_g_pd_data;
-	struct sm5714_usbpd_manager_data *_data = &pd_data->manager;
-
-	int enable = 2;
-
-	if (_data->support_src_vpdo)
-		enable = 3;
-
-	sm5714_usbpd_change_source_cap(enable, max_cur, 0);
+	sm5714_usbpd_change_source_cap(2, max_cur, 0);
 }
 
 void sm5714_select_pdo(int num)
@@ -311,7 +284,6 @@ int sm5714_get_apdo_max_power(unsigned int *pdo_pos,
 void sm5714_vpdo_auth(int auth, int d2d_type)
 {
 	struct sm5714_usbpd_data *pd_data = sm5714_g_pd_data;
-	struct sm5714_usbpd_manager_data *_data = &pd_data->manager;
 	int power_role = 0;
 
 	pd_data->phy_ops.get_power_role(pd_data, &power_role);
@@ -324,9 +296,7 @@ void sm5714_vpdo_auth(int auth, int d2d_type)
 	if (power_role == USBPD_SOURCE) {
 		if (((pd_data->auth_type != AUTH_LOW_PWR) && (auth == AUTH_LOW_PWR)) ||
 				((pd_data->auth_type != AUTH_HIGH_PWR) && (auth == AUTH_HIGH_PWR))) {
-			if (auth == AUTH_LOW_PWR && pd_data->auth_type == AUTH_HIGH_PWR && _data->support_src_vpdo)
-				sm5714_usbpd_change_source_cap(2, 300, 0);
-			else if (auth == AUTH_LOW_PWR)
+			if (auth == AUTH_LOW_PWR)
 				sm5714_usbpd_change_source_cap(1, 500, 0);
 			else
 				sm5714_usbpd_change_source_cap(0, 1000, 0);
@@ -1914,7 +1884,6 @@ int sm5714_usbpd_match_request(struct sm5714_usbpd_data *pd_data)
 		supply_type = POWER_TYPE_FIXED;
 		break;
 	case 2:
-	case 3:
 		supply_type = POWER_TYPE_VARIABLE;
 		break;
 	default:
@@ -1926,7 +1895,7 @@ int sm5714_usbpd_match_request(struct sm5714_usbpd_data *pd_data)
 		sm5714_info("REQUEST: FIXED\n");
 		goto log_fixed_variable;
 	} else if (supply_type == POWER_TYPE_VARIABLE) {
-		src_max_cur = pd_data->source_data_obj[pos-1].power_data_obj_variable.max_current;
+		src_max_cur = pd_data->source_data_obj[1].power_data_obj_variable.max_current;
 		sm5714_info("REQUEST: VARIABLE\n");
 		goto log_fixed_variable;
 	} else if (supply_type == POWER_TYPE_BATTERY) {
@@ -2245,16 +2214,13 @@ void sm5714_usbpd_protocol_rx(struct sm5714_usbpd_data *pd_data)
 				pdic_data->status_reg |= BITMSG(MSG_NONE);
 				break;
 			case USBPD_Get_Battery_Cap:
-				if (pd_data->policy.rx_data_obj[0].get_battery_cap_data.battery_cap_ref >= 8)
-					pdic_data->status_reg |= BITMSG(MSG_NOT_SUPPORTED);
-				else
-					pdic_data->status_reg |= BITMSG(MSG_GET_BAT_CAP);
+				pdic_data->status_reg |= BITMSG(MSG_GET_BAT_CAP);
 				break;
 			case USBPD_Get_Batt_Status:
 				pdic_data->status_reg |= BITMSG(MSG_GET_BAT_STATUS);
 				break;
 			case USBPD_Battery_Cap:
-					pdic_data->status_reg |= BITMSG(MSG_BAT_CAP);
+				pdic_data->status_reg |= BITMSG(MSG_GET_BAT_CAP);
 				break;
 			case USBPD_Get_Manuf_Info:
 				pdic_data->status_reg |= BITMSG(MSG_GET_MANUF_INFO);
@@ -2380,8 +2346,9 @@ void sm5714_usbpd_protocol_rx(struct sm5714_usbpd_data *pd_data)
 			case USBPD_Soft_Reset:
 				pdic_data->status_reg |= BITMSG(MSG_SOFTRESET);
 				break;
-			case USBPD_Data_Reset:
-				pdic_data->status_reg |= BITMSG(MSG_RESERVED);
+			case USBPD_Data_Reset: /* (Reserved, in PD2 mode) */
+				if (pd_data->policy.rx_msg_header.spec_revision == USBPD_REV_20)
+					pdic_data->status_reg |= BITMSG(MSG_REJECT);
 				break;
 			case USBPD_Not_Supported:
 				pdic_data->status_reg |= BITMSG(MSG_NOT_SUPPORTED);
@@ -2408,7 +2375,7 @@ void sm5714_usbpd_protocol_rx(struct sm5714_usbpd_data *pd_data)
 				pdic_data->status_reg |= BITMSG(MSG_GET_SRC_INFO);
 				break;
 			case USBPD_Get_Revision:
-				pdic_data->status_reg |= BITMSG(MSG_GET_REVISION);
+				pdic_data->status_reg |= BITMSG(MSG_NOT_SUPPORTED);
 				break;
 			case 25 ... 31:
 				pdic_data->status_reg |= BITMSG(MSG_RESERVED);
@@ -2519,8 +2486,6 @@ static int of_sm5714_usbpd_dt(struct sm5714_usbpd_manager_data *_data)
 						"battery,support_vpdo");
 		_data->support_15w_vpdo = of_property_read_bool(np,
 						"battery,support_15w_vpdo");
-		_data->support_src_vpdo = of_property_read_bool(np,
-						"battery,support_src_vpdo");
 		ret = of_property_read_u32(np, "battery,short_cable_current", &_data->short_cable_current);
 		if (ret) {
 			pr_info("%s : short_cable_current is Empty, set as 1800 mA\n", __func__);
@@ -2530,7 +2495,6 @@ static int of_sm5714_usbpd_dt(struct sm5714_usbpd_manager_data *_data)
 #else
 	_data->support_vpdo = false;
 	_data->support_15w_vpdo = false;
-	_data->support_src_vpdo = false;
 #endif
 
 	return ret;
@@ -2546,10 +2510,7 @@ static void sm5714_usbpd_init_source_cap_data(struct sm5714_usbpd_manager_data *
 	msg_header->port_data_role = USBPD_DFP;
 	msg_header->spec_revision = _data->pd_data->specification_revision;
 	msg_header->port_power_role = USBPD_SOURCE;
-	if (_data->support_src_vpdo)
-		msg_header->num_data_objs = 3;
-	else
-		msg_header->num_data_objs = 2;
+	msg_header->num_data_objs = 2;
 
 	data_obj->power_data_obj.max_current = 500 / 10;
 	data_obj->power_data_obj.voltage = 5000 / 50;
@@ -2560,17 +2521,7 @@ static void sm5714_usbpd_init_source_cap_data(struct sm5714_usbpd_manager_data *
 	data_obj->power_data_obj.usb_comm_capable = 1;
 	data_obj->power_data_obj.reserved = 0;
 
-	if (_data->support_src_vpdo) {
-		(data_obj + 1)->power_data_obj_variable.supply_type = POWER_TYPE_VARIABLE;
-		(data_obj + 1)->power_data_obj_variable.max_voltage = 9000/50;
-		(data_obj + 1)->power_data_obj_variable.min_voltage = 7000/50;
-		(data_obj + 1)->power_data_obj_variable.max_current = 300/10;
-
-		(data_obj + 2)->power_data_obj_variable.supply_type = POWER_TYPE_VARIABLE;
-		(data_obj + 2)->power_data_obj_variable.max_voltage = 9000/50;
-		(data_obj + 2)->power_data_obj_variable.min_voltage = 7000/50;
-		(data_obj + 2)->power_data_obj_variable.max_current = 1650/10;
-	} else if (_data->support_15w_vpdo) {
+	if (_data->support_15w_vpdo) {
 		(data_obj + 1)->power_data_obj_variable.supply_type = POWER_TYPE_VARIABLE;
 		(data_obj + 1)->power_data_obj_variable.max_voltage = 9000/50;
 		(data_obj + 1)->power_data_obj_variable.min_voltage = 7000/50;

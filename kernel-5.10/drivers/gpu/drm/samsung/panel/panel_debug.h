@@ -11,7 +11,6 @@
 #define __PANEL_DEBUG_H__
 
 #include <linux/printk.h>
-#include <linux/sec_debug.h>
 #include "util.h"
 
 #ifndef PANEL_PR_TAG
@@ -107,28 +106,5 @@ extern int panel_cmd_log;
 	} while (0)
 
 #define panel_cmd_log_enabled(_x_)	((panel_cmd_log) & (1 << (_x_)))
-
-/*
- * debug level low return 0.
- * debug level mid or high return over 0.
- */
-static inline int panel_debug_level(void)
-{
-#if IS_ENABLED(CONFIG_DRM_MEDIATEK_V2)
-	return !is_debug_level_low();
-#else
-	return secdbg_mode_enter_upload();
-#endif
-}
-
-#define PANEL_BUG() \
-	do { \
-		if (!panel_debug_level()) \
-			panel_err("PANEL_BUG detected\n"); \
-		else \
-			BUG(); \
-	} while (0)
-
-#define PANEL_BUG_ON(cond) do { if (unlikely(cond)) PANEL_BUG(); } while (0)
 
 #endif /* __PANEL_DEBUG_H__ */

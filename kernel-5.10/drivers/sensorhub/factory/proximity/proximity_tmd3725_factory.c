@@ -26,9 +26,22 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 
+#define TMD3725_NAME   "TMD3725"
+#define TMD3725_VENDOR "AMS"
+
 static int prox_trim;
 
-static ssize_t proximity_tmd3725_thresh_detect_high_show(char *buf)
+static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", TMD3725_NAME);
+}
+
+static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", TMD3725_VENDOR);
+}
+
+static ssize_t thresh_detect_high_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct proximity_data *data = get_sensor(SENSOR_TYPE_PROXIMITY)->data;
 	struct proximity_tmd3725_data *thd_data = data->threshold_data;
@@ -38,7 +51,7 @@ static ssize_t proximity_tmd3725_thresh_detect_high_show(char *buf)
 	return sprintf(buf, "%u\n", thd_data->prox_thresh_detect[PROX_THRESH_HIGH]);
 }
 
-static ssize_t proximity_tmd3725_thresh_detect_high_store(const char *buf, size_t size)
+static ssize_t thresh_detect_high_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret, i = 0;
 	u16 uNewThresh;
@@ -71,7 +84,7 @@ static ssize_t proximity_tmd3725_thresh_detect_high_store(const char *buf, size_
 	return ret;
 }
 
-static ssize_t proximity_tmd3725_thresh_detect_low_show(char *buf)
+static ssize_t thresh_detect_low_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct proximity_data *data = get_sensor(SENSOR_TYPE_PROXIMITY)->data;
 	struct proximity_tmd3725_data *thd_data = data->threshold_data;
@@ -81,7 +94,7 @@ static ssize_t proximity_tmd3725_thresh_detect_low_show(char *buf)
 	return sprintf(buf, "%u\n", thd_data->prox_thresh_detect[PROX_THRESH_LOW]);
 }
 
-static ssize_t proximity_tmd3725_thresh_detect_low_store(const char *buf, size_t size)
+static ssize_t thresh_detect_low_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret, i = 0;
 	u16 uNewThresh;
@@ -114,7 +127,7 @@ static ssize_t proximity_tmd3725_thresh_detect_low_store(const char *buf, size_t
 	return ret;
 }
 
-static ssize_t proximity_tmd3725_prox_trim_show(char *buf)
+static ssize_t prox_trim_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 	char *buffer = NULL;
@@ -155,12 +168,12 @@ static ssize_t proximity_tmd3725_prox_trim_show(char *buf)
 	return ret;
 }
 
-static ssize_t proximity_tmd3725_prox_trim_check_show(char *buf)
+static ssize_t prox_trim_check_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%u\n", prox_trim);
 }
 
-static ssize_t proximity_tmd3725_prox_cal_show(char *buf)
+static ssize_t prox_cal_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 	char *buffer = NULL;
@@ -201,7 +214,7 @@ static ssize_t proximity_tmd3725_prox_cal_show(char *buf)
 	return ret;
 }
 
-static ssize_t proximity_tmd3725_prox_cal_store(const char *buf, size_t size)
+static ssize_t prox_cal_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret = 0;
 	int64_t enable = 0;
@@ -237,21 +250,29 @@ static ssize_t proximity_tmd3725_prox_cal_store(const char *buf, size_t size)
 	return size;
 }
 
-struct proximity_factory_chipset_funcs proximity_tmd3725_ops = {
-	.prox_cal_show = proximity_tmd3725_prox_cal_show,
-	.prox_cal_store = proximity_tmd3725_prox_cal_store,
-	.prox_trim_show = proximity_tmd3725_prox_trim_show,
-	.thresh_detect_high_show = proximity_tmd3725_thresh_detect_high_show,
-	.thresh_detect_high_store = proximity_tmd3725_thresh_detect_high_store,
-	.thresh_detect_low_show = proximity_tmd3725_thresh_detect_low_show,
-	.thresh_detect_low_store = proximity_tmd3725_thresh_detect_low_store,
-	.prox_trim_check_show = proximity_tmd3725_prox_trim_check_show,
+static DEVICE_ATTR_RO(name);
+static DEVICE_ATTR_RO(vendor);
+static DEVICE_ATTR(thresh_detect_high, 0664, thresh_detect_high_show, thresh_detect_high_store);
+static DEVICE_ATTR(thresh_detect_low, 0664, thresh_detect_low_show, thresh_detect_low_store);
+static DEVICE_ATTR_RO(prox_trim);
+static DEVICE_ATTR_RO(prox_trim_check);
+static DEVICE_ATTR(prox_cal, 0660, prox_cal_show, prox_cal_store);
+
+static struct device_attribute *proximity_tmd3725_attrs[] = {
+	&dev_attr_name,
+	&dev_attr_vendor,
+	&dev_attr_thresh_detect_high,
+	&dev_attr_thresh_detect_low,
+	&dev_attr_prox_cal,
+	&dev_attr_prox_trim,
+	&dev_attr_prox_trim_check,
+	NULL,
 };
 
-struct proximity_factory_chipset_funcs *get_proximity_tmd3725_chipset_func(char *name)
+struct device_attribute **get_proximity_tmd3725_dev_attrs(char *name)
 {
-	if (strcmp(name, "TMD3725") != 0)
+	if (strcmp(name, TMD3725_NAME) != 0)
 		return NULL;
 
-	return &proximity_tmd3725_ops;
+	return proximity_tmd3725_attrs;
 }

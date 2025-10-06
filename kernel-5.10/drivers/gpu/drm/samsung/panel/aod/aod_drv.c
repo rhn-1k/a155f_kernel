@@ -76,7 +76,7 @@ int panel_do_aod_seqtbl_by_name(struct aod_dev_info *aod, char *seqname)
 
 static int aod_init_panel(struct aod_dev_info *aod, int lock)
 {
-	int ret = 0;
+	int ret;
 	struct aod_ioctl_props *props;
 	struct panel_device *panel;
 
@@ -115,14 +115,13 @@ static int aod_init_panel(struct aod_dev_info *aod, int lock)
 		}
 	}
 
-	if (check_aod_seqtbl_exist(aod, SELF_MASK_ENA_SEQ)) {
-		ret = panel_do_aod_seqtbl_by_name_nolock(aod, SELF_MASK_ENA_SEQ);
-		if (ret < 0) {
-			panel_err("failed to run sequence(%s)\n",
-					SELF_MASK_ENA_SEQ);
-			goto err;
-		}
+	ret = panel_do_aod_seqtbl_by_name_nolock(aod, SELF_MASK_ENA_SEQ);
+	if (ret < 0) {
+		panel_err("failed to run sequence(%s)\n",
+				SELF_MASK_ENA_SEQ);
+		goto err;
 	}
+
 err:
 	if (lock == INIT_WITH_LOCK)
 		panel_mutex_unlock(&panel->op_lock);

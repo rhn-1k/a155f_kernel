@@ -132,12 +132,6 @@ enum sec_battery_dual_mode {
 	SEC_DUAL_BATTERY_SUB,
 	SEC_DUAL_BATTERY_TOTAL,
 };
-
-enum sec_battery_dual_chg_mode {
-	SEC_DUAL_BATTERY_CHG_ON = 0,
-	SEC_DUAL_BATTERY_CHG_OFF,
-	SEC_DUAL_BATTERY_BUCK_OFF,
-};
 #endif
 
 enum sec_battery_capacity_mode {
@@ -211,7 +205,6 @@ enum sec_wireless_pad_id {
 	/* 0x20~2F : Multi Port */
 	WC_PAD_MULTI_PORT_START = 0x20,
 	WC_PAD_N6100 = 0x20, /* N6100 portrait mode */
-	WC_PAD_P5200_P = 0x24, /* P5200 Pad mode(right) */
 	WC_PAD_P4300 = 0x25, /* P4300 Pad mode */
 	WC_PAD_P5400_P = 0x27, /* P5400 Pad mode(left) */
 	WC_PAD_MULTI_PORT_END = 0x2F,
@@ -292,12 +285,6 @@ enum sec_wireless_pad_id {
 #define is_3rd_pad(vendor_id) (\
 	(vendor_id == 0x6E00) || \
 	(vendor_id == 0x0066))
-
-#define is_3_1_wc_status(wc_stat) (\
-	(wc_stat == SEC_BATTERY_CABLE_HV_WIRELESS_DC))
-
-#define is_valid_2_1_forced_ta(vid) (\
-	(vid == 0x04E8))
 
 enum sec_battery_adc_channel {
 	SEC_BAT_ADC_CHANNEL_CABLE_CHECK = 0,
@@ -535,24 +522,12 @@ enum sec_battery_check {
   */
 #define SEC_FUELGAUGE_CAPACITY_TYPE_RESET	(-1)
 
+#if IS_ENABLED(CONFIG_DUAL_FUELGAUGE)
  /* SEC_FUELGAUGE_CAPACITY_TYPE_RESET_SUB
   * use capacity information to reset sub fuel gauge
   * (only for driver algorithm, can NOT be set by user)
   */
 #define SEC_FUELGAUGE_CAPACITY_TYPE_RESET_SUB	(-2)
-
- /* SEC_FUELGAUGE_CAPACITY_TYPE_RESET_SUB_PKCP
-  * use capacity information to reset sub fuel gauge using 523k
-  * (only for driver algorithm, can NOT be set by user)
-  */
-#define SEC_FUELGAUGE_CAPACITY_TYPE_RESET_SUB_PKCP	(-3)
-
-#if IS_ENABLED(CONFIG_DUAL_FUELGAUGE)
- /* SEC_FUELGAUGE_CAPACITY_TYPE_RESET_DUAL
-  * use capacity information to reset dual fuel gauge
-  * (only for driver algorithm, can NOT be set by user)
-  */
-#define SEC_FUELGAUGE_CAPACITY_TYPE_RESET_DUAL	(-4)
 #endif
 
 /* SEC_FUELGAUGE_CAPACITY_TYPE_RAW
@@ -628,8 +603,7 @@ typedef struct {
 
 #define is_pwr_nego_wireless_type(cable_type) ( \
 	cable_type == SEC_BATTERY_CABLE_HV_WIRELESS_20 || \
-	cable_type == SEC_BATTERY_CABLE_WIRELESS_EPP || \
-	cable_type == SEC_BATTERY_CABLE_WIRELESS_MPP)
+	cable_type == SEC_BATTERY_CABLE_WIRELESS_EPP)
 
 #define is_hv_wireless_type(cable_type) ( \
 	cable_type == SEC_BATTERY_CABLE_HV_WIRELESS || \
@@ -638,9 +612,7 @@ typedef struct {
 	cable_type == SEC_BATTERY_CABLE_HV_WIRELESS_20_LIMIT || \
 	cable_type == SEC_BATTERY_CABLE_WIRELESS_HV_VEHICLE || \
 	cable_type == SEC_BATTERY_CABLE_WIRELESS_HV_PACK || \
-	cable_type == SEC_BATTERY_CABLE_WIRELESS_EPP || \
-	cable_type == SEC_BATTERY_CABLE_WIRELESS_MPP_FAKE || \
-	cable_type == SEC_BATTERY_CABLE_WIRELESS_MPP)
+	cable_type == SEC_BATTERY_CABLE_WIRELESS_EPP)
 
 #define is_nv_wireless_type(cable_type)	( \
 	cable_type == SEC_BATTERY_CABLE_WIRELESS || \
@@ -681,7 +653,6 @@ typedef struct {
 	cable_type != SEC_BATTERY_CABLE_HV_WIRELESS_20_LIMIT && \
 	cable_type != SEC_BATTERY_CABLE_WIRELESS_HV_PACK && \
 	cable_type != SEC_BATTERY_CABLE_WIRELESS_EPP && \
-	cable_type != SEC_BATTERY_CABLE_WIRELESS_MPP && \
 	cable_type != SEC_BATTERY_CABLE_WIRELESS_EPP_NV)
 
 #define is_wired_type(cable_type) \

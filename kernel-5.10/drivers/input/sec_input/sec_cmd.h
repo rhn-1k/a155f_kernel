@@ -134,7 +134,6 @@ struct sec_cmd_data {
 	atomic_t			cmd_is_running;
 	struct mutex		cmd_lock;
 	struct mutex		fs_lock;
-	struct mutex		io_lock;
 #ifdef USE_SEC_CMD_QUEUE
 	struct kfifo		cmd_queue;
 	struct mutex		fifo_lock;
@@ -161,6 +160,5 @@ void sec_cmd_exit(struct sec_cmd_data *data, int devt);
 void sec_cmd_send_event_to_user(struct sec_cmd_data *data, char *test, char *result);
 void sec_cmd_send_status_uevent(struct sec_cmd_data *data, enum sec_cmd_status_uevent_type type, int value);
 void sec_cmd_send_gesture_uevent(struct sec_cmd_data *data, int type, int x, int y);
-int sec_cmd_io_init(struct sec_cmd_data *data, int devt);
 
 #endif /* _SEC_CMD_H_ */

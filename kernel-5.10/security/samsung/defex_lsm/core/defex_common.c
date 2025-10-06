@@ -107,7 +107,7 @@ int local_fread(struct file *f, loff_t offset, void *ptr, unsigned long bytes)
 
 const char unknown_file[] = "<unknown filename>";
 
-bool check_slab_ptr(void *ptr)
+__visible_for_testing bool check_slab_ptr(void *ptr)
 {
 	struct page *page;
 
@@ -135,10 +135,8 @@ int init_defex_context(struct defex_context *dc, int syscall, struct task_struct
 
 void release_defex_context(struct defex_context *dc)
 {
-	if (dc->process_name_buff)
-		free_page((unsigned long)dc->process_name_buff);
-	if (dc->target_name_buff)
-		free_page((unsigned long)dc->target_name_buff);
+	kfree(dc->process_name_buff);
+	kfree(dc->target_name_buff);
 	if (dc->target_file)
 		fput(dc->target_file);
 #ifndef DEFEX_CACHES_ENABLE
@@ -181,9 +179,9 @@ char *get_dc_process_name(struct defex_context *dc)
 	if (!dc->process_name) {
 		dpath = get_dc_process_dpath(dc);
 		if (dpath) {
-			dc->process_name_buff = (char *)__get_free_page(GFP_KERNEL);
+			dc->process_name_buff = kmalloc(PATH_MAX, GFP_KERNEL);
 			if (dc->process_name_buff)
-				path = d_path(dpath, dc->process_name_buff, PAGE_SIZE);
+				path = d_path(dpath, dc->process_name_buff, PATH_MAX);
 		}
 		dc->process_name = (IS_ERR_OR_NULL(path)) ? (char *)unknown_file : path;
 	}
@@ -215,9 +213,9 @@ char *get_dc_target_name(struct defex_context *dc)
 	if (!dc->target_name) {
 		dpath = get_dc_target_dpath(dc);
 		if (dpath) {
-			dc->target_name_buff = (char *)__get_free_page(GFP_KERNEL);
+			dc->target_name_buff = kmalloc(PATH_MAX, GFP_KERNEL);
 			if (dc->target_name_buff)
-				path = d_path(dpath, dc->target_name_buff, PAGE_SIZE);
+				path = d_path(dpath, dc->target_name_buff, PATH_MAX);
 		}
 		dc->target_name = (IS_ERR_OR_NULL(path)) ? (char *)unknown_file : path;
 	}
@@ -301,7 +299,7 @@ char *defex_get_filename(struct task_struct *p)
 	}
 	path_get(dpath);
 
-	buff = (char *)__get_free_page(GFP_KERNEL);
+	buff = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (buff)
 		path = d_path(dpath, buff, PATH_MAX);
 	path_put(dpath);
@@ -318,7 +316,7 @@ out_filename:
 		filename = (char *)unknown_file;
 
 	if (buff)
-		free_page((unsigned long)buff);
+		kfree(buff);
 	return filename;
 }
 

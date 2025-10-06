@@ -14,11 +14,7 @@
 		pins_cmd_dat {
 			pinmux = <MTK_PINMUX(SEC_GPIO_NUM(AP,pio,140), 1)>,
 				<MTK_PINMUX(SEC_GPIO_NUM(AP,pio,141), 1)>;
-#if 0
-			bias-pull-up;
-#else
 			bias-disable;
-#endif
 		};
 	};
 	snvm_i2c_off: snvm_i2c_off {
@@ -33,7 +29,7 @@
 
 &i2c5 {
 	clock-frequency = <400000>;
-#if 1	
+#if 0	
 	status = "disabled";
 #else
 	status = "okay";
@@ -49,7 +45,7 @@
 	};
 };
 
-#if 1
+#if 0
 / {
 	fragment@k250a_platform {
 		target-path = "/";
@@ -58,7 +54,7 @@
 				status = "ok";
 				compatible = "sec_k250a_platform";
 				1p8_pvdd-supply = <&fixed_regulator4>;
-#if 1
+#if 0
 				i2c_node = <&i2c5>;
 #endif
 			};

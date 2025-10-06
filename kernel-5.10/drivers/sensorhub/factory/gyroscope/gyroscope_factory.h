@@ -19,14 +19,9 @@
 #include <linux/device.h>
 #include <linux/types.h>
 
-struct gyroscope_factory_chipset_funcs {
-	ssize_t (*selftest)(char *name);
-};
-
-struct gyroscope_factory_chipset_funcs *get_gyroscope_icm42605m_chipset_func(char *name);
-struct gyroscope_factory_chipset_funcs *get_gyroscope_lsm6dsl_chipset_func(char *name);
-struct gyroscope_factory_chipset_funcs *get_gyroscope_lsm6dsotr_chipset_func(char *name);
-struct gyroscope_factory_chipset_funcs *get_gyroscope_lsm6dsvtr_chipset_func(char *name);
-struct gyroscope_factory_chipset_funcs *get_gyroscope_icm42632m_chipset_func(char *name);
-
+struct device_attribute **get_gyroscope_icm42605m_dev_attrs(char *name);
+struct device_attribute **get_gyroscope_lsm6dsl_dev_attrs(char *name);
+struct device_attribute **get_gyroscope_lsm6dsotr_dev_attrs(char *name);
+struct device_attribute **get_gyroscope_lsm6dsvtr_dev_attrs(char *name);
+struct device_attribute **get_gyroscope_icm42632m_dev_attrs(char *name);
 #endif

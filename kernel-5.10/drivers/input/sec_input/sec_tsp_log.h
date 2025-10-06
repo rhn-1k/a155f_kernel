@@ -39,11 +39,11 @@
  * ( Timestamp + additional Message + Tsp logs )
  */
 void sec_tsp_sponge_log(char *buf);
-void sec_debug_tsp_log_msg(char *msg, char *buf);
-void sec_debug_tsp_fail_hist(char *msg, char *buf);
+void sec_debug_tsp_log_msg(char *msg, char *fmt, ...);
+void sec_debug_tsp_fail_hist(char *msg, char *fmt, ...);
 void sec_tsp_log_fix(void);
 void sec_tsp_raw_data_clear(char mode);
-void sec_debug_tsp_raw_data_msg(char mode, char *msg, char *buf);
+void sec_debug_tsp_raw_data_msg(char mode, char *msg, char *fmt, ...);
 void sec_debug_tsp_command_history(char *buf);
 
 int sec_tsp_log_init(void);

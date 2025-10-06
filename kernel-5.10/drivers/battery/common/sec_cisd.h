@@ -182,9 +182,6 @@ extern const char *cisd_event_data_str[];
 #define MAX_CHARGER_POWER	100
 #define POWER_JSON_STRING	"POWER_"
 #define POWER_COUNT_JSON_STRING "COUNT"
-#define MAX_DCERR_CAUSE		0xFF
-#define DCERR_COUNT_JSON_STRING	"DCERR"
-#define DCERR_JSON_STRING		"0x"
 #define SS_PD_VID			0x04E8
 #define MIN_SS_PD_PID		0x3000
 #define MAX_SS_PD_PID		0x30FF
@@ -215,14 +212,6 @@ struct pd_data {
 	struct pd_data *next;
 };
 
-struct dcerr_data {
-	unsigned int cause;
-	unsigned int count;
-
-	struct dcerr_data* prev;
-	struct dcerr_data* next;
-};
-
 struct cisd {
 	unsigned int cisd_alg_index;
 	unsigned int state;
@@ -245,15 +234,12 @@ struct cisd {
 	struct mutex padlock;
 	struct mutex powerlock;
 	struct mutex pdlock;
-	struct mutex dcerrlock;
 	struct pad_data* pad_array;
 	struct power_data* power_array;
 	struct pd_data *pd_array;
-	struct dcerr_data* dcerr_array;
 	unsigned int pad_count;
 	unsigned int power_count;
 	unsigned int pd_count;
-	unsigned int dcerr_count;
 };
 
 extern struct cisd *gcisd;
@@ -283,7 +269,4 @@ void count_cisd_power_data(struct cisd* cisd, int power);
 
 void init_cisd_pd_data(struct cisd *cisd);
 void count_cisd_pd_data(unsigned short vid, unsigned short pid);
-
-void init_cisd_dcerr_data(struct cisd *cisd);
-void count_cisd_dcerr_data(struct cisd *cisd, unsigned int dcerr_cause);
 #endif /* __SEC_CISD_H */

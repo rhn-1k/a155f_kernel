@@ -79,7 +79,7 @@ struct sec_tclm_nvdata {
 	u8 cal_pos_hist_cnt;
 	u8 cal_pos_hist_lastp;
 	u8 cal_pos_hist_queue[2 * CAL_HISTORY_QUEUE_MAX];
-	u8 cal_fail_flag; /* pass : 1 fail : etc */
+	u8 cal_fail_falg; /* pass : 1 fail : etc */
 	u8 cal_fail_cnt; /* history cnt */
 } __attribute__ ((packed));
 

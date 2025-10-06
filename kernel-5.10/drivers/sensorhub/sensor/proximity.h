@@ -20,8 +20,6 @@
 
 #include <linux/device.h>
 
-#define PROX_RAW_ADDITIONAL_DEBUG_DATA_VERSION 2000
-
 #define PROX_THRESH_HIGH		0
 #define PROX_THRESH_LOW			1
 #define PROX_THRESH_SIZE		2
@@ -56,11 +54,6 @@ struct prox_event {
 
 struct prox_raw_event {
 	u16 prox_raw;
-	u16 prox;
-	u16 call_min;
-	u16 base_line;
-	u16 ps_off;
-	u16 ir_excpetion_state;
 } __attribute__((__packed__));
 
 struct prox_cal_event {
@@ -133,6 +126,5 @@ struct sensor_chipset_init_funcs *get_proximity_stk3391x_function_pointer(char *
 struct sensor_chipset_init_funcs *get_proximity_stk33512_function_pointer(char *name);
 struct sensor_chipset_init_funcs *get_proximity_stk3afx_function_pointer(char *name);
 struct sensor_chipset_init_funcs *get_proximity_tmd3725_function_pointer(char *name);
-struct sensor_chipset_init_funcs *get_proximity_tmd4914_function_pointer(char *name);
 
 u16 get_prox_raw_data(void);

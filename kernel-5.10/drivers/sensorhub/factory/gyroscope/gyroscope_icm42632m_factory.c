@@ -13,7 +13,6 @@
  *
  */
 
-#include "gyroscope_factory.h"
 #include "../../comm/shub_comm.h"
 #include "../../utility/shub_utility.h"
 #include "../../sensormanager/shub_sensor.h"
@@ -29,6 +28,16 @@
 #define DEF_BIAS_LSB_THRESH_SELF_STM (40000 / DEF_GYRO_SENS_TDK)
 #define DEF_GYRO_MAX_DPS_TDK         (10)
 #define DEF_GYRO_SELF_MIN_RATIO_TDK  (50)
+
+static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", ICM42632M_NAME);
+}
+
+static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", ICM42632M_VENDOR);
+}
 
 static u32 icm42632m_selftest_sqrt(u32 sqsum)
 {
@@ -96,7 +105,7 @@ static u32 icm42632m_selftest_sqrt(u32 sqsum)
 	return sq_rt;
 }
 
-static ssize_t gyroscope_icm42632m_selftest(char *buf)
+static ssize_t selftest_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	char *temp_buf = NULL;
 	int temp_buf_length = 0;
@@ -308,14 +317,21 @@ exit:
 	return ret;
 }
 
-struct gyroscope_factory_chipset_funcs gyroscope_icm42632m_ops = {
-	.selftest = gyroscope_icm42632m_selftest,
+static DEVICE_ATTR_RO(name);
+static DEVICE_ATTR_RO(vendor);
+static DEVICE_ATTR_RO(selftest);
+
+static struct device_attribute *gyro_icm42632m_attrs[] = {
+	&dev_attr_name,
+	&dev_attr_vendor,
+	&dev_attr_selftest,
+	NULL,
 };
 
-struct gyroscope_factory_chipset_funcs *get_gyroscope_icm42632m_chipset_func(char *name)
+struct device_attribute **get_gyroscope_icm42632m_dev_attrs(char *name)
 {
 	if (strcmp(name, ICM42632M_NAME) != 0)
 		return NULL;
 
-	return &gyroscope_icm42632m_ops;
+	return gyro_icm42632m_attrs;
 }

@@ -46,7 +46,7 @@ static get_init_chipset_funcs_ptr *get_magnetometer_init_chipset_funcs(int *len)
 	return get_mag_funcs_ary;
 }
 
-static int init_magnetometer_variable(int type)
+static int init_magnetometer_variable(void)
 {
 	struct magnetometer_data *data = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD)->data;
 
@@ -66,16 +66,12 @@ static int init_magnetometer_variable(int type)
 			if (!data->cover_matrix)
 				return -ENOMEM;
 		}
-
-		data->mpp_matrix = kzalloc(data->mag_matrix_len, GFP_KERNEL);
-		if (!data->mpp_matrix)
-			return -ENOMEM;
 	}
 
 	return 0;
 }
 
-static int set_mag_position(int type, int position)
+static int set_mag_position(int position)
 {
 	int ret = 0;
 	struct magnetometer_data *data = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD)->data;
@@ -94,7 +90,7 @@ static int set_mag_position(int type, int position)
 	return ret;
 }
 
-static int get_mag_position(int type)
+static int get_mag_position(void)
 {
 	struct magnetometer_data *data = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD)->data;
 
@@ -140,27 +136,6 @@ int set_mag_cover_matrix(struct magnetometer_data *data)
 	return 0;
 }
 
-int set_mag_mpp_matrix(struct magnetometer_data *data)
-{
-	int ret = 0;
-
-	if (!data->mpp_matrix)
-		return 0;
-
-	shub_infof();
-
-	ret = shub_send_command(CMD_SETVALUE, SENSOR_TYPE_GEOMAGNETIC_FIELD, MAG_SUBCMD_MPP_MATRIX,
-				(char *)data->mpp_matrix, data->mag_matrix_len);
-	shub_infof("%u", data->position);
-
-	if (ret < 0) {
-		shub_errf("failed %d", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
 int get_mag_sensor_value(char *dataframe, int *index, struct sensor_event *event, int frame_len)
 {
 	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD);
@@ -183,7 +158,7 @@ int get_mag_sensor_value(char *dataframe, int *index, struct sensor_event *event
 	return 0;
 }
 
-static int open_mag_calibration_file(int type)
+static int open_mag_calibration_file(void)
 {
 	int ret = 0;
 	struct magnetometer_data *data = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD)->data;
@@ -218,7 +193,7 @@ static int parsing_mag_calibration(char *dataframe, int *index, int frame_len)
 	struct magnetometer_data *data = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD)->data;
 
 	if (*index + data->cal_data_len > frame_len) {
-		shub_errf("parsing error");
+		shub_errf("parssing error");
 		return -EINVAL;
 	}
 
@@ -243,13 +218,13 @@ static int set_mag_cal(struct magnetometer_data *data)
 	return ret;
 }
 
-static int sync_magnetometer_status(int type)
+static int sync_magnetometer_status(void)
 {
 	int ret = 0;
 	struct magnetometer_data *data = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD)->data;
 
 	shub_infof();
-	ret = set_mag_position(type, data->position);
+	ret = set_mag_position(data->position);
 	if (ret < 0) {
 		shub_errf("set_position failed");
 		return ret;
@@ -266,12 +241,11 @@ static int sync_magnetometer_status(int type)
 		shub_errf("set_mag_cal failed");
 
 	set_mag_cover_matrix(data);
-	set_mag_mpp_matrix(data);
 
 	return ret;
 }
 
-static void print_magnetometer_debug(int type)
+static void print_magnetometer_debug(void)
 {
 	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD);
 	struct sensor_event *event = &(sensor->last_event_buffer);
@@ -317,7 +291,6 @@ int init_magnetometer(bool en)
 		kfree_and_clear(magnetometer_data.cal_data);
 		kfree_and_clear(magnetometer_data.mag_matrix);
 		kfree_and_clear(magnetometer_data.cover_matrix);
-		kfree_and_clear(magnetometer_data.mpp_matrix);
 		destroy_default_func(sensor);
 	}
 

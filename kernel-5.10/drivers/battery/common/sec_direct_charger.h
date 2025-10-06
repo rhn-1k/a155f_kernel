@@ -30,12 +30,10 @@
 #if IS_ENABLED(CONFIG_SEC_ABC)
 #define ABC_DC_CNT	5
 #endif
-#define MAX_DC_ICS	2
 
 typedef enum _sec_direct_chg_src {
 	SEC_CHARGING_SOURCE_SWITCHING = 0,
 	SEC_CHARGING_SOURCE_DIRECT,
-	SEC_CHARGING_SOURCE_NONE,
 } sec_direct_chg_src_t;
 
 typedef enum _sec_direct_chg_mode {
@@ -85,7 +83,6 @@ struct sec_direct_charger_platform_data {
 	int fpdo_dc_max_sub_vbat;
 #endif
 	bool chgen_over_swell_rechg_vol;
-	int ovlo_workaround_delay;
 };
 
 struct sec_direct_charger_info {
@@ -130,6 +127,5 @@ struct sec_direct_charger_info {
 #if IS_ENABLED(CONFIG_SEC_ABC)
 	int abc_dc_current_cnt;
 #endif
-	bool dc_err_test;
 };
 #endif /* __SEC_DIRECT_CHARGER_H */

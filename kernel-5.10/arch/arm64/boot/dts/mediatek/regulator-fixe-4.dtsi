@@ -5,17 +5,10 @@
 
 &pio {
         ldo_gpio4: ldo_gpio4 {
-#if 1
-		GPIO_CONFIG_PUD(AP,pio,105, FUNC_OUTPUT_HIGH, PULL_NONE);
-#else
-		GPIO_CONFIG_PUD(AP,pio,105, FUNC_OUTPUT_HIGH, PULL_NONE);
-#endif
+                GPIO_CONFIG_PUD(AP,pio,105, FUNC_OUTPUT_HIGH, PULL_NONE);
 #if 0
 		samsung,pin-con-pdn = <3>;
 		samsung,pin-pud-pdn = <0>;
-#endif
-#if 1
-		
 #endif
         };
 };

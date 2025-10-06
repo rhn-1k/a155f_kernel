@@ -758,13 +758,6 @@ if [ "${SKIP_DEFCONFIG}" != "1" ] ; then
     eval ${POST_DEFCONFIG_CMDS}
     set +x
   fi
-
-     #custom defconfig
-     echo "========================================================"
-     echo " Merging custom defconfig with .config"
-     (cd ${OUT_DIR} && ${MERGE_CONFIG} -m .config ${WDIR}/custom_defconfigs/custom_defconfig ${WDIR}/custom_defconfigs/version_defconfig)
-     (cd ${OUT_DIR} && make O=${OUT_DIR} ${TOOL_ARGS} olddefconfig)
-  
 fi
 
 if [ "${LTO}" = "none" -o "${LTO}" = "thin" -o "${LTO}" = "full" ]; then
@@ -891,11 +884,6 @@ echo "========================================================"
 echo " Building kernel"
 
 set -x
-
-if [ "$MAKE_MENUCONFIG" = "1" ]; then
-  (cd ${OUT_DIR} && make O=${OUT_DIR} "${TOOL_ARGS[@]}" menuconfig || true)
-fi
-
 (cd ${OUT_DIR} && make O=${OUT_DIR} "${TOOL_ARGS[@]}" "${MAKE_ARGS[@]}" ${MAKE_GOALS})
 set +x
 
@@ -1068,13 +1056,6 @@ if [ -n "${DIST_CMDS}" ]; then
   fi
   set -x
   eval ${DIST_CMDS}
-
-  # Copy the build kernel images to DIST_DIR
-  cp "${WDIR}/out/target/product/a16/obj/KERNEL_OBJ/kernel-5.10/arch/arm64/boot/Image.gz" ${DIST_DIR}/
-
-  # Copy the ramdisk to DIST_DIR
-  cp "${WDIR}/oem_prebuilt_images/gki-ramdisk.lz4" ${DIST_DIR}/
-
   set +x
 fi
 

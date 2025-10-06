@@ -176,7 +176,7 @@ int compare_with_five_signature(const struct proca_certificate *certificate,
 int proca_certificate_copy(struct proca_certificate *dst,
 			const struct proca_certificate *src)
 {
-	PROCA_BUG_ON(!dst || !src);
+	BUG_ON(!dst || !src);
 
 	memset(dst, 0, sizeof(*dst));
 
@@ -257,7 +257,7 @@ bool is_certificate_relevant_to_task(
 			struct task_struct *task)
 {
 	const char system_server_app_name[] = "/system/framework/services.jar";
-	const char *system_proc_names[] = {"system_server", "zygote64"};
+	const char system_server[] = "system_server";
 	const size_t max_app_name = 1024;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(PROCA_KUNIT_ENABLED))
 	char cmdline[1024 + 1];
@@ -276,8 +276,7 @@ bool is_certificate_relevant_to_task(
 	// Special case for system_server
 	if (!strncmp(parsed_cert->app_name, system_server_app_name,
 			parsed_cert->app_name_size)) {
-		if (strncmp(cmdline, system_proc_names[0], strlen(system_proc_names[0])) && 
-			strncmp(cmdline, system_proc_names[1], strlen(system_proc_names[1])))
+		if (strncmp(cmdline, system_server, sizeof(system_server)))
 			return false;
 	} else if (parsed_cert->app_name[0] != '/') {
 		// Case for Android applications
@@ -301,7 +300,7 @@ bool is_certificate_relevant_to_file(
 	u8 stored_file_hash[PROCA_MAX_DIGEST_SIZE] = {0};
 	size_t hash_len = sizeof(stored_file_hash);
 
-	PROCA_BUG_ON(!file || !parsed_cert);
+	BUG_ON(!file || !parsed_cert);
 
 	result = five_calc_file_hash(file, HASH_ALGO_SHA1, stored_file_hash, &hash_len);
 	if (result) {
@@ -311,8 +310,3 @@ bool is_certificate_relevant_to_file(
 
 	return compare_with_five_signature(parsed_cert, stored_file_hash, hash_len);
 }
-
-#if defined(CONFIG_SEC_KUNIT)
-EXPORT_SYMBOL_GPL(parse_proca_certificate);
-EXPORT_SYMBOL_GPL(init_certificate_validation_hash);
-#endif

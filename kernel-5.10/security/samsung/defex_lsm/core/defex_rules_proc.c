@@ -29,11 +29,7 @@
 #endif
 
 #define LOAD_FLAG_DPOLICY		0x01
-#if defined(DEFEX_SINGLE_RULES_FILE)
-#define LOAD_FLAG_DPOLICY_SYSTEM	0x01
-#else
 #define LOAD_FLAG_DPOLICY_SYSTEM	0x02
-#endif
 #define LOAD_FLAG_SYSTEM_FIRST		0x04
 #define LOAD_FLAG_TIMEOUT		0x08
 #define LOAD_FLAG_RECOVERY		0x10
@@ -322,14 +318,6 @@ __visible_for_testing int load_rules_common(struct file *f, int flags)
 {
 	int res = -1, data_size, rules_size;
 	unsigned char *data_buff = NULL;
-	struct dentry *f_dentry = file_dentry(f);
-	struct inode *f_inode = file_inode(f);
-
-	if (!(f->f_mode & FMODE_READ) || !f_dentry || f_dentry->d_inode != f_inode ||
-			!check_slab_ptr(f_inode) || !S_ISREG(f_inode->i_mode)) {
-		defex_log_err("Failed to open the file");
-		goto do_clean;
-	}
 
 	data_size = i_size_read(file_inode(f));
 	if (data_size <= 0 || data_size > DEFEX_RULES_ARRAY_SIZE_MAX)
@@ -370,10 +358,8 @@ __visible_for_testing int load_rules_common(struct file *f, int flags)
 			memcpy(packed_rules_primary, data_buff, rules_size);
 			spin_unlock(&rules_data_lock);
 			policy_data = packed_rules_primary;
-#if !defined(DEFEX_SINGLE_RULES_FILE)
 			if (flags & LOAD_FLAG_DPOLICY_SYSTEM)
 				update_load_flags(LOAD_FLAG_SYSTEM_FIRST);
-#endif
 			defex_log_info("Primary rules have been stored");
 		} else {
 			if (rules_size > 0) {

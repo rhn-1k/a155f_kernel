@@ -743,10 +743,6 @@ static ssize_t hiccup_store(struct device *dev,
 	} else
 		pr_warn("%s invalid com : %s\n", __func__, buf);
 
-	if (muic_data->is_water_detect &&
-			muic_data->vbus_state == STATUS_VBUS_LOW)
-		usbpd_water_pd_ta_notify(muic_data->man);
-
 	return count;
 }
 #endif
@@ -2388,7 +2384,6 @@ static int sm5714_muic_probe(struct platform_device *pdev)
 					MUIC_DEV_NAME, __func__);
 			goto fail;
 		}
-		kobject_uevent(&switch_device->kobj, KOBJ_CHANGE);
 		dev_set_drvdata(switch_device, muic_data);
 	}
 

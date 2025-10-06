@@ -165,7 +165,6 @@ int muic_check_fled_state(int enable, int mode)
 	if ((muic_data->fled_torch_enable == false) &&
 			(muic_data->fled_flash_enable == false)) {
 		if ((mode == FLED_MODE_TORCH) && (enable == false)) {
-			muic_afc_request_cause_clear_bit(FLED);
 			cancel_delayed_work(&muic_data->afc_torch_work);
 			schedule_delayed_work(&muic_data->afc_torch_work,
 					msecs_to_jiffies(5000));
@@ -173,6 +172,7 @@ int muic_check_fled_state(int enable, int mode)
 					MUIC_DEV_NAME, __func__);
 		} else {
 			muic_afc_request_voltage(FLED, 9);  /* 5V -> 9V(12V) */
+
 		}
 	}
 
@@ -575,7 +575,7 @@ int sm5714_afc_ta_attach(struct sm5714_muic_data *muic_data)
 		sm5714_err("[%s:%s] err read VBUS\n", MUIC_DEV_NAME, __func__);
 		return 0;
 	}
-	sm5714_info("[%s:%s] VBUS[0x%02x]\n", MUIC_DEV_NAME, __func__, ret);
+	pr_info("[%s:%s] VBUS[0x%02x]\n", MUIC_DEV_NAME, __func__, ret);
 
 	vbvolt = (ret & 0x04) >> 2;
 	if (!vbvolt) {
@@ -1225,7 +1225,6 @@ int sm5714_muic_afc_set_voltage(int vol)
 #endif
 
 	sm5714_info("[%s:%s] vol = %dV\n", MUIC_DEV_NAME, __func__, vol);
-	muic_data->afc_dp_reset_count = 0;
 
 	if (vol == 5) {
 		if ((muic_data->attached_dev ==
@@ -1279,9 +1278,6 @@ static void muic_afc_retry_work(struct work_struct *work)
 			muic_notifier_attach_attached_dev(muic_data->attached_dev);
 			sm5714_info("[%s:%s] DP RESET skip\n",
 				MUIC_DEV_NAME, __func__);
-#if IS_ENABLED(CONFIG_USB_USING_ADVANCED_USBLOG)
-			printk_usb(NOTIFY_PRINTK_USB_SNAPSHOT, "AFC fail with DP RESET\n");
-#endif
 			goto EOR;
 		}
 		muic_data->afc_dp_reset_count++;

@@ -1,9 +1,0 @@
-#
-# ADI Authenticate IC
-#
-
-config BATTERY_AUTH_DS28E30
-	tristate "ADI Authenticate IC"
-	default n
-	help
-	  Say Y to ADI Authenticate IC.

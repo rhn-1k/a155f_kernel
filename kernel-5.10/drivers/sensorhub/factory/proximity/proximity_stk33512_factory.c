@@ -27,6 +27,19 @@
 #include "proximity_factory.h"
 #include "../../others/shub_panel.h"
 
+#define STK33512_NAME "STK33512"
+#define STK33512_VENDOR "Sitronix"
+
+static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", STK33512_NAME);
+}
+
+static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", STK33512_VENDOR);
+}
+
 static int proximity_get_calibration_data(void)
 {
 	int ret = 0;
@@ -56,7 +69,7 @@ static int proximity_get_calibration_data(void)
 	return 0;
 }
 
-static ssize_t proximity_stk33512_prox_cal_store(const char *buf, size_t size)
+static ssize_t proximity_cal_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret = 0;
 	struct proximity_data *data = (struct proximity_data *)get_sensor(SENSOR_TYPE_PROXIMITY)->data;
@@ -76,14 +89,21 @@ static ssize_t proximity_stk33512_prox_cal_store(const char *buf, size_t size)
 	return size;
 }
 
-struct proximity_factory_chipset_funcs proximity_stk33512_ops = {
-	.prox_cal_store = proximity_stk33512_prox_cal_store,
+static DEVICE_ATTR_RO(name);
+static DEVICE_ATTR_RO(vendor);
+static DEVICE_ATTR(prox_cal, 0220, NULL, proximity_cal_store);
+
+static struct device_attribute *proximity_stk33512_attrs[] = {
+	&dev_attr_name,
+	&dev_attr_vendor,
+	&dev_attr_prox_cal,
+	NULL,
 };
 
-struct proximity_factory_chipset_funcs *get_proximity_stk33512_chipset_func(char *name)
+struct device_attribute **get_proximity_stk33512_dev_attrs(char *name)
 {
-	if (strcmp(name, "STK33512") != 0)
+	if (strcmp(name, STK33512_NAME) != 0)
 		return NULL;
 
-	return &proximity_stk33512_ops;
+	return proximity_stk33512_attrs;
 }

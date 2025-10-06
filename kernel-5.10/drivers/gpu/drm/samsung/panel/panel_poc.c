@@ -704,7 +704,35 @@ static int poc_get_poc_ctrl(struct panel_device *panel)
 
 static int poc_data_backup(struct panel_device *panel, u8 *buf, int size, char *filename)
 {
-	/* unsupported function */
+#if 0
+
+	struct file *fp;
+	mm_segment_t old_fs;
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	panel_info("size %d\n", size);
+
+	fp = filp_open(filename, O_CREAT | O_TRUNC | O_WRONLY | O_SYNC, 0660);
+	if (IS_ERR(fp)) {
+		panel_err("fail to open log file\n");
+		goto open_err;
+	}
+
+	vfs_write(fp, (u8 __user *)buf, size, &fp->f_pos);
+
+	panel_info("write %d bytes done!!\n", size);
+
+	filp_close(fp, current->files);
+	set_fs(old_fs);
+
+
+	return 0;
+
+ open_err:
+	set_fs(old_fs);
+#endif
 	return -1;
 }
 
@@ -1674,11 +1702,226 @@ enum {
 	MAX_EPOCEFS,
 };
 
+static int poc_get_efs_count(char *filename, int *value)
+{
+	mm_segment_t old_fs;
+	struct file *filp = NULL;
+	int fsize = 0, nread, rc, ret = 0;
+	int count;
+	u8 buf[128];
+
+	if (!filename || !value) {
+		panel_err("invalid parameter\n");
+		return -EINVAL;
+	}
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	filp = filp_open(filename, O_RDONLY, 0440);
+	if (IS_ERR(filp)) {
+		ret = PTR_ERR(filp);
+		if (ret == -ENOENT)
+			panel_err("file(%s) not exist\n", filename);
+		else
+			panel_info("file(%s) open error(ret %d)\n", filename, ret);
+		set_fs(old_fs);
+		return -EPOCEFS_NOENT;
+	}
+
+	if (filp->f_path.dentry && filp->f_path.dentry->d_inode)
+		fsize = filp->f_path.dentry->d_inode->i_size;
+
+	if (fsize == 0 || fsize > ARRAY_SIZE(buf)) {
+		panel_err("invalid file(%s) size %d\n", filename, fsize);
+		ret = -EPOCEFS_EMPTY;
+		goto exit;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	nread = vfs_read(filp, (char __user *)buf, fsize, &filp->f_pos);
+	if (nread != fsize) {
+		panel_err("failed to read (ret %d)\n", nread);
+		ret = -EPOCEFS_READ;
+		goto exit;
+	}
+
+	rc = sscanf(buf, "%d", &count);
+	if (rc != 1) {
+		panel_err("failed to sscanf %d\n", rc);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	panel_info("%s(size %d) : %d\n", filename, fsize, count);
+
+	*value = count;
+
+exit:
+	filp_close(filp, current->files);
+	set_fs(old_fs);
+
+	return ret;
+}
+
+static int poc_get_efs_image_index_org(char *filename, int *value)
+{
+	mm_segment_t old_fs;
+	struct file *filp = NULL;
+	int fsize = 0, nread, rc, ret = 0;
+	char binary;
+	int image_index, chksum;
+	u8 buf[128];
+
+	if (!filename || !value) {
+		panel_err("invalid parameter\n");
+		return -EINVAL;
+	}
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	filp = filp_open(filename, O_RDONLY, 0440);
+	if (IS_ERR(filp)) {
+		ret = PTR_ERR(filp);
+		if (ret == -ENOENT)
+			panel_err("file(%s) not exist\n", filename);
+		else
+			panel_info("file(%s) open error(ret %d)\n", filename, ret);
+		set_fs(old_fs);
+		return -EPOCEFS_NOENT;
+	}
+
+	if (filp->f_path.dentry && filp->f_path.dentry->d_inode)
+		fsize = filp->f_path.dentry->d_inode->i_size;
+
+	if (fsize == 0 || fsize > ARRAY_SIZE(buf)) {
+		panel_err("invalid file(%s) size %d\n", filename, fsize);
+		ret = -EPOCEFS_EMPTY;
+		goto exit;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	nread = vfs_read(filp, (char __user *)buf, fsize, &filp->f_pos);
+	if (nread != fsize) {
+		panel_err("failed to read (ret %d)\n", nread);
+		ret = -EPOCEFS_READ;
+		goto exit;
+	}
+
+	rc = sscanf(buf, "%c %d %d", &binary, &image_index, &chksum);
+	if (rc != 3) {
+		panel_err("failed to sscanf %d\n", rc);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	panel_info("%s(size %d) : %c %d %d\n",
+			filename, fsize, binary, image_index, chksum);
+
+	*value = image_index;
+
+exit:
+	filp_close(filp, current->files);
+	set_fs(old_fs);
+
+	return ret;
+}
+
+static int poc_get_efs_image_index(char *filename, int *value)
+{
+	mm_segment_t old_fs;
+	struct file *filp = NULL;
+	int fsize = 0, nread, rc, ret = 0;
+	int image_index, seek;
+	u8 buf[128];
+
+	if (!filename || !value) {
+		panel_err("invalid parameter\n");
+		return -EINVAL;
+	}
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	filp = filp_open(filename, O_RDONLY, 0440);
+	if (IS_ERR(filp)) {
+		ret = PTR_ERR(filp);
+		if (ret == -ENOENT)
+			panel_err("file(%s) not exist\n", filename);
+		else
+			panel_info("file(%s) open error(ret %d)\n", filename, ret);
+		set_fs(old_fs);
+		return -EPOCEFS_NOENT;
+	}
+
+	if (filp->f_path.dentry && filp->f_path.dentry->d_inode)
+		fsize = filp->f_path.dentry->d_inode->i_size;
+
+	if (fsize == 0 || fsize > ARRAY_SIZE(buf)) {
+		panel_err("invalid file(%s) size %d\n", filename, fsize);
+		ret = -EPOCEFS_EMPTY;
+		goto exit;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	nread = vfs_read(filp, (char __user *)buf, fsize, &filp->f_pos);
+	if (nread != fsize) {
+		panel_err("failed to read (ret %d)\n", nread);
+		ret = -EPOCEFS_READ;
+		goto exit;
+	}
+
+	rc = sscanf(buf, "%d,%d", &image_index, &seek);
+	if (rc != 2) {
+		panel_err("failed to sscanf %d\n", rc);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	panel_info("%s(size %d) : %d %d\n",
+			filename, fsize, image_index, seek);
+
+	*value = image_index;
+
+exit:
+	filp_close(filp, current->files);
+	set_fs(old_fs);
+
+	return ret;
+}
+
 static int poc_dpui_callback(struct panel_poc_device *poc_dev)
 {
 	struct panel_poc_info *poc_info;
+	char tbuf[MAX_DPUI_VAL_LEN];
+	int size, ret, poci, poci_org;
 
 	poc_info = &poc_dev->poc_info;
+
+	ret = poc_get_efs_count(POC_TOTAL_TRY_COUNT_FILE_PATH, &poc_info->total_trycount);
+	if (ret < 0)
+		poc_info->total_trycount = (ret > -MAX_EPOCEFS) ? ret : -1;
+	size = snprintf(tbuf, MAX_DPUI_VAL_LEN, "%d", poc_info->total_trycount);
+	set_dpui_field(DPUI_KEY_PNPOCT, tbuf, size);
+
+	ret = poc_get_efs_count(POC_TOTAL_FAIL_COUNT_FILE_PATH, &poc_info->total_failcount);
+	if (ret < 0)
+		poc_info->total_failcount = (ret > -MAX_EPOCEFS) ? ret : -1;
+	size = snprintf(tbuf, MAX_DPUI_VAL_LEN, "%d", poc_info->total_failcount);
+	set_dpui_field(DPUI_KEY_PNPOCF, tbuf, size);
+
+	ret = poc_get_efs_image_index_org(POC_INFO_FILE_PATH, &poci_org);
+	if (ret < 0)
+		poci_org = -EPOCEFS_IMGIDX + ret;
+	size = snprintf(tbuf, MAX_DPUI_VAL_LEN, "%d", poci_org);
+	set_dpui_field(DPUI_KEY_PNPOCI_ORG, tbuf, size);
+
+	ret = poc_get_efs_image_index(POC_USER_FILE_PATH, &poci);
+	if (ret < 0)
+		poci = -EPOCEFS_IMGIDX + ret;
+	size = snprintf(tbuf, MAX_DPUI_VAL_LEN, "%d", poci);
+	set_dpui_field(DPUI_KEY_PNPOCI, tbuf, size);
 
 	inc_dpui_u32_field(DPUI_KEY_PNPOC_ER_TRY, poc_info->erase_trycount);
 	poc_info->erase_trycount = 0;

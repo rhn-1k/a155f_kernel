@@ -15,11 +15,6 @@ USER_BUILD=false
 LOG_BUFFER_ENABLE=false
 SHOW_RULES_ENABLE=false
 
-ifeq ($(CONFIG_SECURITY_DEFEX_DTM),y)
-    $(warning [DEFEX] Enable DTM)
-    TRUSTED_MAP_ENABLE=true
-endif
-
 ifeq (,$(TARGET_BUILD_VARIANT))
     ifeq ($(CONFIG_SECURITY_DEFEX_USER),y)
         USER_BUILD := true
@@ -58,12 +53,8 @@ defex-y += catch_engine/defex_ht.o
 defex-y += defex_rules.o
 defex-$(CONFIG_COMPAT) += catch_engine/defex_catch_list_compat.o
 
-ifeq ($(CONFIG_SECURITY_DEFEX_SINGLE_FILE), y)
-    $(warning [DEFEX] Single rule file MODE.)
-    DEFEX_DEFINES += -DDEFEX_SINGLE_RULES_FILE
-else
-    $(warning [DEFEX] Multiple rule file MODE.)
-endif
+# Immutable Feature is applied with permissive mode first.
+DEFEX_DEFINES := -DDEFEX_PERMISSIVE_IM
 
 # Integrity Feature is applied with permissive mode first.
 DEFEX_DEFINES += -DDEFEX_PERMISSIVE_INT
@@ -82,13 +73,13 @@ ifeq ($(CONFIG_DEFEX_KERNEL_ONLY), y)
         DEFEX_DEFINES += -DDEFEX_PERMISSIVE_IM
         DEFEX_DEFINES += -DDEFEX_PERMISSIVE_LP
         DEFEX_DEFINES += -DDEFEX_DEBUG_ENABLE
-        ifeq ($(LOG_BUFFER_ENABLE), true)
-            DEFEX_DEFINES += -DDEFEX_LOG_BUFFER_ENABLE
-        endif
-        ifeq ($(SHOW_RULES_ENABLE), true)
-            defex-y += debug/defex_rules_show.o
-            DEFEX_DEFINES += -DDEFEX_SHOW_RULES_ENABLE
-        endif
+	ifeq ($(LOG_BUFFER_ENABLE), true)
+	    DEFEX_DEFINES += -DDEFEX_LOG_BUFFER_ENABLE
+	endif
+	ifeq ($(SHOW_RULES_ENABLE), true)
+	    defex-y += debug/defex_rules_show.o
+	    DEFEX_DEFINES += -DDEFEX_SHOW_RULES_ENABLE
+	endif
     endif
 endif
 

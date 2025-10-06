@@ -25,18 +25,33 @@
 #include "../../sensorhub/shub_device.h"
 #include "proximity_factory.h"
 
+#define GP2AP110S_NAME    "GP2AP110S"
+#define GP2AP110S_VENDOR  "SHARP"
+
 #define PROX_SETTINGS_FILE_PATH     "/efs/FactoryApp/prox_settings"
 
-static ssize_t proximity_gp2ap110s_modify_settings_show(char *buf)
+static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", GP2AP110S_NAME);
+}
+
+static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", GP2AP110S_VENDOR);
+}
+
+static ssize_t proximity_modify_settings_show(struct device *dev,
+					      struct device_attribute *attr, char *buf)
 {
 	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_PROXIMITY);
 	struct proximity_data *data = sensor->data;
 
-	sensor->funcs->open_calibration_file(SENSOR_TYPE_PROXIMITY);
+	sensor->funcs->open_calibration_file();
 	return snprintf(buf, PAGE_SIZE, "%d\n", data->setting_mode);
 }
 
-static ssize_t proximity_gp2ap110s_modify_settings_store(const char *buf, size_t size)
+static ssize_t proximity_modify_settings_store(struct device *dev,
+					       struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret = 0;
 	u8 mode;
@@ -66,7 +81,7 @@ static ssize_t proximity_gp2ap110s_modify_settings_store(const char *buf, size_t
 	return size;
 }
 
-static ssize_t proximity_gp2ap110s_settings_thresh_high_show(char *buf)
+static ssize_t proximity_settings_thresh_high_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct proximity_data *data = get_sensor(SENSOR_TYPE_PROXIMITY)->data;
 	struct proximity_gp2ap110s_data *thd_data = data->threshold_data;
@@ -74,7 +89,8 @@ static ssize_t proximity_gp2ap110s_settings_thresh_high_show(char *buf)
 	return snprintf(buf, PAGE_SIZE, "%d\n", thd_data->prox_setting_thresh[PROX_THRESH_HIGH]);
 }
 
-static ssize_t proximity_gp2ap110s_settings_thresh_high_store(const char *buf, size_t size)
+static ssize_t proximity_settings_thresh_high_store(struct device *dev, struct device_attribute *attr, const char *buf,
+						    size_t size)
 {
 	int ret;
 	u16 settings_thresh;
@@ -94,7 +110,7 @@ static ssize_t proximity_gp2ap110s_settings_thresh_high_store(const char *buf, s
 	return size;
 }
 
-static ssize_t proximity_gp2ap110s_settings_thresh_low_show(char *buf)
+static ssize_t proximity_settings_thresh_low_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct proximity_data *data = get_sensor(SENSOR_TYPE_PROXIMITY)->data;
 	struct proximity_gp2ap110s_data *thd_data = data->threshold_data;
@@ -102,7 +118,8 @@ static ssize_t proximity_gp2ap110s_settings_thresh_low_show(char *buf)
 	return snprintf(buf, PAGE_SIZE, "%d\n", thd_data->prox_setting_thresh[PROX_THRESH_LOW]);
 }
 
-static ssize_t proximity_gp2ap110s_settings_thresh_low_store(const char *buf, size_t size)
+static ssize_t proximity_settings_thresh_low_store(struct device *dev, struct device_attribute *attr, const char *buf,
+						   size_t size)
 {
 	int ret;
 	u16 settings_thresh;
@@ -122,7 +139,7 @@ static ssize_t proximity_gp2ap110s_settings_thresh_low_store(const char *buf, si
 	return size;
 }
 
-static ssize_t proximity_gp2ap110s_prox_trim_show(char *buf)
+static ssize_t prox_trim_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 	char *buffer = NULL;
@@ -164,7 +181,8 @@ static ssize_t proximity_gp2ap110s_prox_trim_show(char *buf)
 	return ret;
 }
 
-static ssize_t proximity_gp2ap110s_prox_cal_store(const char *buf, size_t size)
+
+static ssize_t prox_cal_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret = 0;
 	int result = 0;
@@ -176,21 +194,29 @@ static ssize_t proximity_gp2ap110s_prox_cal_store(const char *buf, size_t size)
 	return size;
 }
 
-struct proximity_factory_chipset_funcs proximity_gp2ap110s_ops = {
-	.prox_cal_store = proximity_gp2ap110s_prox_cal_store,
-	.prox_trim_show = proximity_gp2ap110s_prox_trim_show,
-	.modify_settings_show = proximity_gp2ap110s_modify_settings_show,
-	.modify_settings_store = proximity_gp2ap110s_modify_settings_store,
-	.settings_thresh_high_show = proximity_gp2ap110s_settings_thresh_high_show,
-	.settings_thresh_high_store = proximity_gp2ap110s_settings_thresh_high_store,
-	.settings_thresh_low_show = proximity_gp2ap110s_settings_thresh_low_show,
-	.settings_thresh_low_store = proximity_gp2ap110s_settings_thresh_low_store,
+static DEVICE_ATTR_RO(name);
+static DEVICE_ATTR_RO(vendor);
+static DEVICE_ATTR_RO(prox_trim);
+static DEVICE_ATTR_WO(prox_cal);
+static DEVICE_ATTR(modify_settings, 0664, proximity_modify_settings_show, proximity_modify_settings_store);
+static DEVICE_ATTR(settings_thd_high, 0664, proximity_settings_thresh_high_show, proximity_settings_thresh_high_store);
+static DEVICE_ATTR(settings_thd_low, 0664, proximity_settings_thresh_low_show, proximity_settings_thresh_low_store);
+
+static struct device_attribute *proximity_gp2ap110s_attrs[] = {
+	&dev_attr_name,
+	&dev_attr_vendor,
+	&dev_attr_modify_settings,
+	&dev_attr_settings_thd_high,
+	&dev_attr_settings_thd_low,
+	&dev_attr_prox_trim,
+	&dev_attr_prox_cal,
+	NULL,
 };
 
-struct proximity_factory_chipset_funcs *get_proximity_gp2ap110s_chipset_func(char *name)
+struct device_attribute **get_proximity_gp2ap110s_dev_attrs(char *name)
 {
-	if (strcmp(name, "GP2AP110S") != 0)
+	if (strcmp(name, GP2AP110S_NAME) != 0)
 		return NULL;
 
-	return &proximity_gp2ap110s_ops;
+	return proximity_gp2ap110s_attrs;
 }

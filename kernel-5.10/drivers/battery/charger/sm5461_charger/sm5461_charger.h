@@ -15,6 +15,7 @@
 
 #define SM5461_TA_MIN_CURRENT   1000
 #define SM5461_CV_OFFSET        0
+#define SM5461_CI_OFFSET        400
 #define SM5461_SIOP_LEV1        1100
 #define SM5461_SIOP_LEV2        1700
 
@@ -200,7 +201,6 @@ struct sm5461_platform_data {
 	u32 fpdo_mainvbat_reg;
 	u32 fpdo_subvbat_reg;
 	u32 fpdo_vnow_reg;
-	u32 ci_offset;
 
 	struct {
 		u32 chg_float_voltage;

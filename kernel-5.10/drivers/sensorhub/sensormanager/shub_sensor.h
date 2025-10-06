@@ -23,13 +23,6 @@
 #include <linux/slab.h>
 
 #define SENSOR_NAME_MAX 40
-#define DT_NAME_MAX     50
-
-#define kvfree_and_clear(buffer) \
-	do { \
-        kvfree(buffer);  \
-        buffer = NULL;  \
-	} while (0)
 
 #define kfree_and_clear(buffer) \
 	do { \
@@ -73,20 +66,20 @@ struct sensor_chipset_init_funcs {
 typedef struct sensor_chipset_init_funcs *(*get_init_chipset_funcs_ptr)(char *name);
 
 struct sensor_funcs {
-	int (*sync_status)(int); /* this is called when sensorhub ready to work or reset */
+	int (*sync_status)(void); /* this is called when sensorhub ready to work or reset */
 	int (*enable)(void);
 	int (*disable)(void);
 	int (*batch)(int, int);
 	void (*report_event)(void);
 	int (*inject_additional_data)(char *, int);
-	void (*print_debug)(int);
+	void (*print_debug)(void);
 	int (*parsing_data)(char *, int *, int);
-	int (*set_position)(int, int);
-	int (*get_position)(int);
+	int (*set_position)(int);
+	int (*get_position)(void);
 	int (*init_chipset)(void);
 	void (*parse_dt)(struct device *dev);
-	int (*init_variable)(int);
-	int (*open_calibration_file)(int);
+	int (*init_variable)(void);
+	int (*open_calibration_file)(void);
 	/* if receive_event_size is 0, you can check parsing error in this func */
 	int (*get_sensor_value)(char *, int *, struct sensor_event *, int);
 	get_init_chipset_funcs_ptr *(*get_init_chipset_funcs)(int *);

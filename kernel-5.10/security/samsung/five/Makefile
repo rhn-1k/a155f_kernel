@@ -29,18 +29,8 @@ else
 endif
 
 # kunit tests options:
-ENABLED_TARGETS_LIST = b0s g0s
-ifeq ($(CONFIG_SEC_KUNIT), y)
+ifeq ($(CONFIG_SEC_KUNIT)$(CONFIG_UML), yy)
   GCOV_PROFILE := y
-  EXTRA_CFLAGS += -DFIVE_KUNIT_ENABLED
   five-$(CONFIG_FIVE) += five_dsms.o
-  ifeq ($(CONFIG_UML), y)
-  else
-    ifneq ($(filter $(TARGET_DEVICE),$(ENABLED_TARGETS_LIST)),)
-      ifeq ($(CONFIG_FIVE_PA_FEATURE), y)
-      endif
-    else
-      $(warning security/five: TARGET_DEVICE: $(TARGET_DEVICE). skip on-device kunit test)
-    endif
-  endif
+  EXTRA_CFLAGS += -DFIVE_KUNIT_ENABLED
 endif

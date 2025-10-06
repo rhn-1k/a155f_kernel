@@ -43,8 +43,8 @@ static long sec_input_rawdata_ioctl(struct file *file, unsigned int cmd,  void _
 		/* rawdata_len is 4K size, and if num is over 1, u8 data[IOCTL_SIZE] is overflow
 		 * will be fixed to support numbers buffer.
 		 */
-		if (t.num * raw_dev->rawdata_len > IOCTL_SIZE) {
-			t.num = IOCTL_SIZE / raw_dev->rawdata_len;
+		if (t.num > 1) {
+			t.num = 1;
 		}
 
 		for (total = 0; total < t.num; total++) {
@@ -138,8 +138,6 @@ void sec_input_rawdata_copy_to_user(s16 *data, int len, int press)
 	u8 *target_mem;
 	s16 *buff;
 	int tlength = len;
-
-	raw_dev->rawdata_len = len;
 
 	target_mem = raw_dev->rawdata_pool[raw_dev->raw_write_index++];
 	if (raw_dev->raw_write_index >= RAW_VEC_NUM)

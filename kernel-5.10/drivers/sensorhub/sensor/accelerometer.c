@@ -27,18 +27,24 @@
 #include <linux/of_gpio.h>
 #include <linux/slab.h>
 
-#if defined(CONFIG_SHUB_KUNIT)
-#include <kunit/mock.h>
-#define __mockable __weak
-#define __visible_for_testing
-#else
-#define __mockable
-#define __visible_for_testing static
-#endif
+get_init_chipset_funcs_ptr get_acc_funcs_ary[] = {
+	get_accelometer_icm42605m_function_pointer,
+	get_accelometer_lsm6dsl_function_pointer,
+	get_accelometer_lis2dlc12_function_pointer,
+	get_accelometer_lsm6dsotr_function_pointer,
+	get_accelometer_lsm6dsvtr_function_pointer,
+	get_accelometer_icm42632m_function_pointer,
+};
 
-static int init_accelerometer_variable(int type)
+static get_init_chipset_funcs_ptr *get_accel_init_chipset_funcs(int *len)
 {
-	struct accelerometer_data *data = get_sensor(type)->data;
+	*len = ARRAY_SIZE(get_acc_funcs_ary);
+	return get_acc_funcs_ary;
+}
+
+static int init_accelerometer_variable(void)
+{
+	struct accelerometer_data *data = get_sensor(SENSOR_TYPE_ACCELEROMETER)->data;
 
 	if (is_support_system_feature(SF_ACCEL_16G))
 		data->range = 16;
@@ -48,34 +54,24 @@ static int init_accelerometer_variable(int type)
 	return 0;
 }
 
-__visible_for_testing void parse_dt_accelerometer(struct device *dev)
+void parse_dt_accelerometer(struct device *dev)
 {
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_ACCELEROMETER);
-	struct accelerometer_data *data = sensor->data;
 	struct device_node *np = dev->of_node;
-
 	int accel_motor_coef = 0;
-	char dt_name[DT_NAME_MAX] = {0, };
-
-	get_sensor_dt_name(dt_name, "acc-", (char *)&sensor->spec.name, "-position");
-
-	if (of_property_read_u32(np, dt_name, &data->position))
-		data->position = 0;
-	shub_infof("vendor name[%s], position[%d]", dt_name, data->position);
 
 	if (!of_property_read_u32(np, "acc-motor-coef", &accel_motor_coef))
 		set_motor_coef(accel_motor_coef);
 	shub_infof("acc-motor-coef[%d]", accel_motor_coef);
 }
 
-int set_accel_position(int type, int position)
+int set_accel_position(int position)
 {
 	int ret = 0;
-	struct accelerometer_data *data = get_sensor(type)->data;
+	struct accelerometer_data *data = get_sensor(SENSOR_TYPE_ACCELEROMETER)->data;
 
 	data->position = position;
 
-	ret = shub_send_command(CMD_SETVALUE, type, SENSOR_AXIS, (char *)&(data->position),
+	ret = shub_send_command(CMD_SETVALUE, SENSOR_TYPE_ACCELEROMETER, SENSOR_AXIS, (char *)&(data->position),
 				sizeof(data->position));
 	if (ret < 0) {
 		shub_errf("CMD fail %d\n", ret);
@@ -87,17 +83,17 @@ int set_accel_position(int type, int position)
 	return ret;
 }
 
-int get_accel_position(int type)
+int get_accel_position(void)
 {
-	struct accelerometer_data *data = get_sensor(type)->data;
+	struct accelerometer_data *data = get_sensor(SENSOR_TYPE_ACCELEROMETER)->data;
 
 	return data->position;
 }
 
-static int open_accel_calibration_file(int type)
+static int open_accel_calibration_file(void)
 {
 	int ret = 0;
-	struct accelerometer_data *data = get_sensor(type)->data;
+	struct accelerometer_data *data = get_sensor(SENSOR_TYPE_ACCELEROMETER)->data;
 
 	ret = shub_file_read(ACCEL_CALIBRATION_FILE_PATH, (char *)&data->cal_data, sizeof(data->cal_data), 0);
 	if (ret != sizeof(data->cal_data))
@@ -137,13 +133,13 @@ int set_accel_cal(struct accelerometer_data *data)
 	return ret;
 }
 
-int sync_accelerometer_status(int type)
+int sync_accelerometer_status(void)
 {
 	int ret = 0;
-	struct accelerometer_data *data = get_sensor(type)->data;
+	struct accelerometer_data *data = get_sensor(SENSOR_TYPE_ACCELEROMETER)->data;
 
 	shub_infof();
-	ret = set_accel_position(type, data->position);
+	ret = set_accel_position(data->position);
 	if (ret < 0) {
 		shub_errf("set position failed");
 		return ret;
@@ -158,13 +154,13 @@ int sync_accelerometer_status(int type)
 	return ret;
 }
 
-void print_accelerometer_debug(int type)
+void print_accelerometer_debug(void)
 {
-	struct shub_sensor *sensor = get_sensor(type);
+	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_ACCELEROMETER);
 	struct sensor_event *event = &(sensor->last_event_buffer);
 	struct accel_event *sensor_value = (struct accel_event *)(event->value);
 
-	shub_info("%s(%u) : %d, %d, %d (%lld) (%ums, %dms)", sensor->name, sensor->type, sensor_value->x,
+	shub_info("%s(%u) : %d, %d, %d (%lld) (%ums, %dms)", sensor->name, SENSOR_TYPE_ACCELEROMETER, sensor_value->x,
 		  sensor_value->y, sensor_value->z, event->timestamp, sensor->sampling_period,
 		  sensor->max_report_latency);
 }
@@ -177,6 +173,7 @@ static struct sensor_funcs accelerometer_sensor_func = {
 	.open_calibration_file = open_accel_calibration_file,
 	.parse_dt = parse_dt_accelerometer,
 	.init_variable = init_accelerometer_variable,
+	.get_init_chipset_funcs = get_accel_init_chipset_funcs,
 };
 
 static struct accelerometer_data accelerometer_data;
@@ -202,37 +199,14 @@ int init_accelerometer(bool en)
 	return ret;
 }
 
-static struct accelerometer_data accelerometer_sub_data;
-
-int init_accelerometer_sub(bool en)
+static void print_accelerometer_uncal_debug(void)
 {
-	int ret = 0;
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_ACCELEROMETER_SUB);
-
-	if (!sensor)
-		return 0;
-
-	if (en) {
-		ret = init_default_func(sensor, "accelerometer_sub_sensor", 6, 6, sizeof(struct accel_event));
-
-		sensor->report_mode_continuous = true;
-		sensor->data = (void *)&accelerometer_sub_data;
-		sensor->funcs = &accelerometer_sensor_func;
-	} else {
-		destroy_default_func(sensor);
-	}
-
-	return ret;
-}
-
-static void print_accelerometer_uncal_debug(int type)
-{
-	struct shub_sensor *sensor = get_sensor(type);
+	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED);
 	struct sensor_event *event = &(sensor->last_event_buffer);
 	struct uncal_accel_event *sensor_value = (struct uncal_accel_event *)(event->value);
 
 	shub_info("%s(%u) : %d, %d, %d, %d, %d, %d (%lld) (%ums, %dms)", sensor->name,
-		  sensor->type, sensor_value->uncal_x, sensor_value->uncal_y,
+		  SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED, sensor_value->uncal_x, sensor_value->uncal_y,
 		  sensor_value->uncal_z, sensor_value->offset_x, sensor_value->offset_y, sensor_value->offset_z,
 		  event->timestamp, sensor->sampling_period, sensor->max_report_latency);
 }
@@ -260,24 +234,3 @@ int init_accelerometer_uncal(bool en)
 
 	return ret;
 }
-
-int init_accelerometer_uncal_sub(bool en)
-{
-	int ret = 0;
-	struct shub_sensor *sensor = get_sensor(SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED_SUB);
-
-	if (!sensor)
-		return 0;
-
-	if (en) {
-		ret = init_default_func(sensor, "uncal_accel_sub_sensor", 12, 12, sizeof(struct uncal_accel_event));
-
-		sensor->report_mode_continuous = true;
-		sensor->funcs = &accelerometer_uncal_sensor_func;
-	} else {
-		destroy_default_func(sensor);
-	}
-
-	return ret;
-}
-

@@ -21,7 +21,7 @@
 
 				panel-lut {
 #if 1
-					panel_0 = <&s6e8fc3_a16x>;
+					panel_0 = <&s6e8fc3_a15>;
 #endif
 #if 0
 					panel_1 = <&${panel_name_1}>;

@@ -295,19 +295,6 @@ static bool sec_direct_fpdo_dc_check(struct sec_direct_charger_info *charger)
 	return false;
 }
 
-static bool sec_dc_chg_check_psy(char *direct_charger_name)
-{
-	struct power_supply *psy_dc_ic = NULL;
-
-	psy_dc_ic = get_power_supply_by_name(direct_charger_name);
-	if (!psy_dc_ic) {
-		pr_err("%s: Fail to get psy (%s)\n",
-				__func__, direct_charger_name);
-		return false;
-	} else
-		return true;
-}
-
 static int sec_direct_chg_check_charging_source(struct sec_direct_charger_info *charger)
 {
 	union power_supply_propval value = {0,};
@@ -320,11 +307,6 @@ static int sec_direct_chg_check_charging_source(struct sec_direct_charger_info *
 #endif
 
 	pr_info("%s: dc_retry_cnt(%d)\n", __func__, charger->dc_retry_cnt);
-
-	if (!sec_dc_chg_check_psy(charger->pdata->direct_charger_name)) {
-		pr_info("%s: S/C was selected! DC IC psy fault\n", __func__);
-		goto end_chg_src;
-	}
 
 	if (charger->dc_err) {
 		if (charger->ta_alert_wa) {
@@ -465,47 +447,6 @@ end_chg_src:
 	return sb_pt_check_chg_src(charger->pt, ret);
 }
 
-static bool sec_direct_chg_ratio_rst(void)
-{
-	int lrp_voter_value = 0;
-
-	if (get_sec_voter_statusf("ICL", VOTER_LRP_TEMP, &lrp_voter_value) < 0)
-		return true;
-
-	pr_info("%s: %s, lrp_voter(%d)\n", __func__, "skip", lrp_voter_value);
-	return false;
-}
-
-static int sec_dchg_get_dchg_op_mode(void)
-{
-	return get_sec_vote_resultf("DCHG_OP");
-}
-
-void sec_direct_chg_handle_ratio_change(int *dchg_op_mode, int dc_output_current)
-{
-	int dc_input_current = 0;
-
-	if (*dchg_op_mode == 0) {
-		pr_err("%s: invalid dchg_op_mode\n", __func__);
-		*dchg_op_mode = DC_MODE_2TO1;
-		return;
-	}
-
-	dc_input_current = dc_output_current / *dchg_op_mode;
-	if (!(dc_input_current >= DC_CHARGER_MIN_CURRENT) && *dchg_op_mode > DC_MODE_2TO1) {
-		pr_info("%s: Input current / %d (%d) is less than PD spec switch to 2:1\n",
-			__func__, *dchg_op_mode, dc_input_current);
-		sec_votef("MAX_APDO_VOLT", VOTER_DC_OP_MODE_F, true, 11000);
-		sec_votef("DCHG_OP", VOTER_DC_OP_MODE_F, true, DC_MODE_2TO1);
-	} else {
-		if (sec_direct_chg_ratio_rst()) {
-			sec_votef("MAX_APDO_VOLT", VOTER_DC_OP_MODE_F, false, 0);
-			sec_votef("DCHG_OP", VOTER_DC_OP_MODE_F, false, 0);
-		}
-	}
-	*dchg_op_mode = sec_dchg_get_dchg_op_mode();
-}
-
 static int sec_direct_chg_set_charging_source(struct sec_direct_charger_info *charger,
 		unsigned int charger_mode, int charging_source)
 {
@@ -541,13 +482,6 @@ static int sec_direct_chg_set_charging_source(struct sec_direct_charger_info *ch
 		value.intval = SEC_INPUT_VOLTAGE_9V;
 		psy_do_property("battery", set,
 				POWER_SUPPLY_EXT_PROP_DIRECT_FIXED_PDO, value);
-
-		if (charger->pdata->ovlo_workaround_delay) {
-			psy_do_property("battery", get,
-				POWER_SUPPLY_EXT_PROP_MISC_EVENT, value);
-			if (value.intval & BATT_MISC_EVENT_FULL_CAPACITY)
-				msleep(charger->pdata->ovlo_workaround_delay);
-		}
 
 		sec_direct_chg_set_switching_charge(charger, charger_mode);
 	}
@@ -606,7 +540,7 @@ static int sec_direct_chg_set_input_current(struct sec_direct_charger_info *char
 static int sec_direct_chg_set_charging_current(struct sec_direct_charger_info *charger,
 			enum power_supply_property psp, int charging_current) {
 	union power_supply_propval value = {0,};
-	int charging_source, cable_type, dchg_op_mode = 0;
+	int charging_source, cable_type;
 
 	psy_do_property("battery", get,
 				POWER_SUPPLY_EXT_PROP_DIRECT_CHARGER_MODE, value);
@@ -627,25 +561,13 @@ static int sec_direct_chg_set_charging_current(struct sec_direct_charger_info *c
 #endif
 
 	charger->dc_charging_current = charging_current;
+	charger->dc_input_current = charger->dc_charging_current / 2;
+
+	charging_source = sec_direct_chg_check_charging_source(charger);
+	value.intval = charger->dc_input_current;
 
 	/* direct charger */
 	if (is_pd_apdo_wire_type(cable_type)) {
-		charging_source = sec_direct_chg_check_charging_source(charger);
-
-		if (!is_dc_higher_ratio_support()) {
-			dchg_op_mode = DC_MODE_2TO1;
-		} else {
-			dchg_op_mode = sec_dchg_get_dchg_op_mode();
-			if (dchg_op_mode < 0) {
-				pr_info("%s: use default %d:1\n", __func__, dchg_op_mode);
-				dchg_op_mode = DC_MODE_2TO1;
-			} else {
-				sec_direct_chg_handle_ratio_change(&dchg_op_mode, charger->dc_charging_current);
-			}
-		}
-		charger->dc_input_current = charger->dc_charging_current / dchg_op_mode;
-
-		value.intval = charger->dc_input_current;
 		psy_do_property(charger->pdata->direct_charger_name, set,
 			POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT, value);
 		sec_direct_chg_set_charging_source(charger, charger->charger_mode, charging_source);
@@ -653,76 +575,6 @@ static int sec_direct_chg_set_charging_current(struct sec_direct_charger_info *c
 
 	return 0;
 }
-
-#if defined(CONFIG_MULTI_DIRECT_CHARGER)
-static int sb_get_dc_ic_name(
-	struct sec_direct_charger_platform_data *pdata, struct mutex *charger_mutex, struct device *dev)
-{
-	const char *dc_ic_names[MAX_DC_ICS];
-	struct device_node *np;
-	int num_dc_ics = 0, i = 0, ret = 0;
-	char *temp_dc_ic_name = NULL;
-
-	np = of_find_node_by_name(NULL, "sec-direct-charger");
-	if (!np) {
-		pr_err("%s : Failed to find sec-direct-charger node\n", __func__);
-		return -EINVAL;
-	}
-
-	num_dc_ics = of_property_count_strings(np, "charger,direct_chargers");
-	if (num_dc_ics <= 0 || num_dc_ics > MAX_DC_ICS) {
-		pr_err("%s: error reading DC IC names\n", __func__);
-		return -EINVAL;
-	}
-
-	if (num_dc_ics > ARRAY_SIZE(dc_ic_names)) {
-		pr_err("%s: too many DC IC names\n", __func__);
-		return -EINVAL;
-	}
-
-	pr_info("%s: num_dc_ics: %d\n", __func__, num_dc_ics);
-
-	if (of_property_read_string_array(np, "charger,direct_chargers", dc_ic_names, num_dc_ics) <= 0) {
-		pr_err("%s: Failed to read string array property for DC IC names\n", __func__);
-		return -EINVAL;
-	}
-
-	for (i = 0; i < num_dc_ics; i++)
-		pr_info("%s: DC IC %d: %s\n", __func__, i, dc_ic_names[i]);
-
-	for (i = 0; i < num_dc_ics; i++) {
-		temp_dc_ic_name = kzalloc(strlen(dc_ic_names[i]) + 1, GFP_KERNEL);
-		if (!temp_dc_ic_name)
-			return -ENOMEM;
-		strscpy(temp_dc_ic_name, dc_ic_names[i], strlen(dc_ic_names[i]) + 1);
-
-		ret = sec_dc_chg_check_psy(temp_dc_ic_name);
-		kfree(temp_dc_ic_name);
-		temp_dc_ic_name = NULL;
-		if (!ret) {
-			pr_info("%s: %s is invalid DC IC\n", __func__, dc_ic_names[i]);
-		} else {
-			pr_info("%s: %s is valid DC IC\n", __func__, dc_ic_names[i]);
-			break;
-		}
-	}
-
-	if (i == 0 || !ret)
-		return 0;
-
-	mutex_lock(charger_mutex);
-	pdata->direct_charger_name = devm_kzalloc(dev, strlen(dc_ic_names[i]) + 1, GFP_KERNEL);
-	if (!pdata->direct_charger_name) {
-		mutex_unlock(charger_mutex);
-		return -ENOMEM;
-	}
-
-	strscpy(pdata->direct_charger_name, dc_ic_names[i], strlen(dc_ic_names[i]) + 1);
-	mutex_unlock(charger_mutex);
-
-	return 0;
-}
-#endif
 
 static void sec_direct_chg_set_initial_status(struct sec_direct_charger_info *charger)
 {
@@ -740,7 +592,7 @@ static void sec_direct_chg_set_initial_status(struct sec_direct_charger_info *ch
 	charger->dc_err = false;
 	charger->dc_retry_cnt = 0;
 	charger->dc_rcp = false;
-	charger->test_mode_source = SEC_CHARGING_SOURCE_NONE;
+	charger->test_mode_source = SEC_CHARGING_SOURCE_DIRECT;
 	charger->vbat_min_src = LOW_VBAT_NONE;
 }
 
@@ -772,8 +624,6 @@ static int sec_direct_chg_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_HEALTH:
 		if (charger->charging_source == SEC_CHARGING_SOURCE_DIRECT) {
 			psy_do_property(charger->pdata->direct_charger_name, get, psp, value);
-			if (charger->dc_err_test)
-				value.intval = POWER_SUPPLY_EXT_HEALTH_DC_ERR;
 			if (value.intval == POWER_SUPPLY_EXT_HEALTH_DC_ERR) {
 				charger->dc_retry_cnt++;
 				if (charger->dc_retry_cnt > 2) {
@@ -786,14 +636,8 @@ static int sec_direct_chg_get_property(struct power_supply *psy,
 			}
 #ifdef CONFIG_IFPMIC_LIMITER
 			if (charger->charger_mode_main == SEC_BAT_CHG_MODE_BUCK_OFF_LINEAR_CHARGING) {
-				union power_supply_propval value2 = {0,};
 				psy_do_property(charger->pdata->main_charger_name, set,
 					POWER_SUPPLY_EXT_PROP_WDT_KICK, value);
-				psy_do_property(charger->pdata->main_charger_name, get,
-					psp, value2);
-				/* need to check health of main charger and direct charger both during direct charging */
-				if (value.intval == POWER_SUPPLY_HEALTH_GOOD)
-					value.intval = value2.intval;
 			}
 #endif
 		} else {
@@ -895,11 +739,6 @@ static int sec_direct_chg_get_property(struct power_supply *psy,
 			val->intval = charger->charger_mode_direct;
 			break;
 		case POWER_SUPPLY_EXT_PROP_DCHG_READ_BATP_BATN:
-			ret = psy_do_property(charger->pdata->direct_charger_name, get,
-				ext_psp, value);
-			val->intval = value.intval;
-			break;
-		case POWER_SUPPLY_EXT_PROP_DC_ERROR_CAUSE:
 			ret = psy_do_property(charger->pdata->direct_charger_name, get,
 				ext_psp, value);
 			val->intval = value.intval;
@@ -1047,13 +886,6 @@ static int sec_direct_chg_set_property(struct power_supply *psy,
 			/* If SRCCAP is changed by Src, clear DC err variables */
 			charger->dc_err = false;
 			charger->dc_retry_cnt = 0;
-			if (val->intval) {
-				value.intval = SEC_BAT_CURRENT_EVENT_DC_ERR;
-				psy_do_property("battery", set,
-				POWER_SUPPLY_EXT_PROP_CURRENT_EVENT_CLEAR, value);
-			}
-			pr_info("%s: POWER_SUPPLY_EXT_PROP_DIRECT_CLEAR_ERR\n",
-				__func__);
 			break;
 		case POWER_SUPPLY_EXT_PROP_CHANGE_CHARGING_SOURCE:
 			pr_info("%s: POWER_SUPPLY_EXT_PROP_CHANGE_CHARGING_SOURCE(%d, %d)\n",
@@ -1121,16 +953,6 @@ static int sec_direct_chg_set_property(struct power_supply *psy,
 		case POWER_SUPPLY_EXT_PROP_DC_RCP:
 			charger->dc_rcp = val->intval;
 			break;
-		case POWER_SUPPLY_EXT_PROP_DC_ERR_TEST:
-			charger->dc_err_test = true;
-			break;
-#if defined(CONFIG_MULTI_DIRECT_CHARGER)
-		case POWER_SUPPLY_EXT_PROP_CHECK_VALID_DC_IC:
-			if (sb_get_dc_ic_name(charger->pdata, &charger->charger_mutex, charger->dev))
-				pr_info("%s: Error loading direct_charger_name\n", __func__);
-			pr_info("%s: direct_charger_name: %s\n", __func__, charger->pdata->direct_charger_name);
-			break;
-#endif
  		default:
 			ret = psy_do_property(charger->pdata->main_charger_name, set, ext_psp, value);
 			return ret;
@@ -1168,7 +990,6 @@ static int sec_direct_charger_parse_dt(struct device *dev,
 #endif
 	sb_of_parse_u32_dt(np, "charger,end_soc", charger->pdata, dchg_end_soc, 95);
 	sb_of_parse_bool_dt(np, "charger,ta_alert_wa", charger, ta_alert_wa);
-	sb_of_parse_u32_dt(np, "charger,ovlo_workaround_delay", charger->pdata, ovlo_workaround_delay, 0);
 
 	np = of_find_node_by_name(NULL, "battery");
 	if (!np) {
@@ -1250,7 +1071,7 @@ static int sec_direct_charger_probe(struct platform_device *pdev)
 	charger->charger_mode = SEC_BAT_CHG_MODE_CHARGING_OFF;
 	charger->charger_mode_direct = SEC_BAT_CHG_MODE_CHARGING_OFF;
 	charger->charger_mode_main = SEC_BAT_CHG_MODE_CHARGING_OFF;
-	charger->test_mode_source = SEC_CHARGING_SOURCE_NONE;
+	charger->test_mode_source = SEC_CHARGING_SOURCE_DIRECT;
 
 	charger->wc_tx_enable = false;
 	charger->now_isApdo = false;

@@ -20,7 +20,6 @@
 #include "../sensor/scontext.h"
 #include "../sensormanager/shub_sensor.h"
 #include "../sensormanager/shub_sensor_manager.h"
-#include "../sensormanager/shub_sensor_sysfs.h"
 #include "../sensorhub/shub_device.h"
 #include "../utility/shub_utility.h"
 #include "../utility/shub_dev_core.h"
@@ -30,15 +29,6 @@
 #include "shub_sensor_dump.h"
 #include "shub_system_checker.h"
 #include "shub_debug.h"
-
-#if defined(CONFIG_SHUB_KUNIT)
-#include <kunit/mock.h>
-#define __mockable __weak
-#define __visible_for_testing
-#else
-#define __mockable
-#define __visible_for_testing static
-#endif
 
 #define TIMEINFO_SIZE   50
 #define SUPPORT_SENSORLIST \
@@ -241,7 +231,6 @@ static ssize_t sensor_dump_store(struct device *dev, struct device_attribute *at
 
 		sensorhub_save_ram_dump();
 		ret = send_all_sensor_dump_command();
-		shub_infof("spec retry cnt : %d", get_spec_retry_cnt());
 	} else {
 		if (strcmp(name, "accelerometer") == 0)
 			sensor_type = SENSOR_TYPE_ACCELEROMETER;
@@ -277,15 +266,15 @@ static ssize_t sensor_axis_show(struct device *dev, struct device_attribute *att
 
 	sensor = get_sensor(SENSOR_TYPE_ACCELEROMETER);
 	if (sensor)
-		accel_position = sensor->funcs->get_position(sensor->type);
+		accel_position = sensor->funcs->get_position();
 
 	sensor = get_sensor(SENSOR_TYPE_GYROSCOPE);
 	if (sensor)
-		gyro_position = sensor->funcs->get_position(sensor->type);
+		gyro_position = sensor->funcs->get_position();
 
 	sensor = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD);
 	if (sensor)
-		mag_position = sensor->funcs->get_position(sensor->type);
+		mag_position = sensor->funcs->get_position();
 
 	return snprintf(buf, PAGE_SIZE, "%d: %d\n%d: %d\n%d: %d\n",
 			SENSOR_TYPE_ACCELEROMETER, accel_position,
@@ -311,7 +300,7 @@ static ssize_t sensor_axis_store(struct device *dev, struct device_attribute *at
 	}
 
 	if (sensor->funcs && sensor->funcs->set_position)
-		sensor->funcs->set_position(sensor->type, position);
+		sensor->funcs->set_position(position);
 
 	return size;
 }
@@ -443,7 +432,7 @@ static ssize_t make_command_store(struct device *dev, struct device_attribute *a
 				send_buf_len = 8;
 				send_buf = kzalloc(send_buf_len, GFP_KERNEL);
 				if (kstrtouint(token, 10, &arg[0])) {
-					shub_errf("parsing error");
+					shub_errf("parssing error");
 					goto exit;
 				}
 				memcpy(&send_buf[0], &arg[0], 4);
@@ -473,7 +462,7 @@ static ssize_t make_command_store(struct device *dev, struct device_attribute *a
 				}
 			} else if (cmd == CMD_ADD) {
 				if (kstrtouint(token, 10, &arg[1])) {
-					shub_errf("parsing error");
+					shub_errf("parssing error");
 					goto exit;
 				}
 				memcpy(&send_buf[4], &arg[1], 4);
@@ -650,7 +639,7 @@ static DEVICE_ATTR_RW(register_rw);
 #if IS_ENABLED(CONFIG_SENSORS_GRIP_FAILURE_DEBUG)
 static DEVICE_ATTR(grip_fail, 0440, grip_fail_show, NULL);
 #endif
-__visible_for_testing struct device_attribute *shub_debug_attrs[] = {
+static struct device_attribute *shub_debug_attrs[] = {
 	&dev_attr_sensor_axis,
 #if IS_ENABLED(CONFIG_SENSORS_GRIP_FAILURE_DEBUG)
 	&dev_attr_grip_fail,

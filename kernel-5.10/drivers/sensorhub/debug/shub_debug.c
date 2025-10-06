@@ -21,7 +21,6 @@
 #include <linux/version.h>
 
 #include "../comm/shub_comm.h"
-#include "../debug/shub_mini_dump.h"
 #include "../sensormanager/shub_sensor.h"
 #include "../sensormanager/shub_sensor_manager.h"
 #include "../sensormanager/shub_sensor_type.h"
@@ -140,7 +139,7 @@ static void debug_work_func(struct work_struct *work)
 		/* only work for debug level is mid */
 		if (shub_debug_level()) {
 			shub_infof("panic!");
-			shub_infof("mini dump : %s", get_shub_mini_dump());
+			shub_infof("mini dump : %s", data->mini_dump);
 			panic("sensorhub crash error\n");
 
 		} else {

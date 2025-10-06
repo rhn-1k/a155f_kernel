@@ -431,7 +431,7 @@ int proca_get_task_cert(const struct task_struct *task,
 {
 	struct proca_task_descr *task_descr = NULL;
 
-	PROCA_BUG_ON(!task || !cert || !cert_size);
+	BUG_ON(!task || !cert || !cert_size);
 
 	task_descr = proca_table_get_by_task(&g_proca_table, task);
 	if (!task_descr)
@@ -454,9 +454,7 @@ static __init int proca_module_init(void)
 	if (ret)
 		return ret;
 
-	ret = proca_table_init(&g_proca_table);
-	if (ret)
-		return ret;
+	proca_table_init(&g_proca_table);
 
 	security_add_hooks(proca_ops, ARRAY_SIZE(proca_ops), "proca_lsm");
 	five_add_hooks(five_ops, ARRAY_SIZE(five_ops));

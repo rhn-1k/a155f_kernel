@@ -205,7 +205,6 @@ struct sm_dc_info {
 		u32 target_pps_v;
 		int retry_cnt;
 		int vbatreg_cnt;
-		int done_cnt;
 	} wq;
 
 	struct {

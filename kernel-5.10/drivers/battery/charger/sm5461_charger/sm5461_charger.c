@@ -23,11 +23,8 @@
 #include "../../common/sec_direct_charger.h"
 #endif
 #include "sm5461_charger.h"
-#if IS_ENABLED(CONFIG_SEC_ABC)
-#include <linux/sti/abc_common.h>
-#endif
 
-#define SM5461_DC_VERSION  "XH1"
+#define SM5461_DC_VERSION  "XA3"
 
 static u32 SM5461_freq_val[] = {
 	200, 375, 500, 750, 1000, 1250, 1500
@@ -48,14 +45,10 @@ static int sm5461_read_reg(struct sm5461_charger *sm5461, u8 reg, u8 *dest)
 			msleep(30);
 	}
 
-	if (ret < 0) {
-#if IS_ENABLED(CONFIG_SEC_ABC) && !defined(CONFIG_SEC_FACTORY)
-		sec_abc_send_event("MODULE=battery@WARN=dc_i2c_fail");
-#endif
+	if (ret < 0)
 		return ret;
-	} else {
-		*dest = (ret & 0xff);
-	}
+
+	*dest = (ret & 0xff);
 
 	return 0;
 }
@@ -75,11 +68,6 @@ int sm5461_bulk_read(struct sm5461_charger *sm5461, u8 reg, int count, u8 *buf)
 			msleep(30);
 	}
 
-#if IS_ENABLED(CONFIG_SEC_ABC) && !defined(CONFIG_SEC_FACTORY)
-	if (ret < 0)
-		sec_abc_send_event("MODULE=battery@WARN=dc_i2c_fail");
-#endif
-
 	return ret;
 }
 
@@ -97,11 +85,6 @@ static int sm5461_write_reg(struct sm5461_charger *sm5461, u8 reg, u8 value)
 		if (cnt == 0)
 			msleep(30);
 	}
-
-#if IS_ENABLED(CONFIG_SEC_ABC) && !defined(CONFIG_SEC_FACTORY)
-	if (ret < 0)
-		sec_abc_send_event("MODULE=battery@WARN=dc_i2c_fail");
-#endif
 
 	return ret;
 }
@@ -1259,9 +1242,9 @@ static int sm5461_dc_set_charging_config(struct i2c_client *i2c, u32 cv_gl, u32 
 
 	vbatreg = cv_gl + SM5461_CV_OFFSET;
 	if (ci_gl <= SM5461_TA_MIN_CURRENT)
-		ibuslim = ci_gl + (sm5461->pdata->ci_offset * 3 / 2);
+		ibuslim = ci_gl + (SM5461_CI_OFFSET * 3 / 2);
 	else
-		ibuslim = ci_gl + sm5461->pdata->ci_offset;
+		ibuslim = ci_gl + SM5461_CI_OFFSET;
 
 	if (ibuslim % 100)
 		ibuslim = ((ibuslim / 100) * 100) + 100;
@@ -1293,7 +1276,7 @@ static int sm5461_x2bat_dc_set_charging_config(struct i2c_client *i2c, u32 cv_gl
 
 	if (sm_dc->chip_id == SM5461_SUB) {
 		if (ci_gl <= SM5461_TA_MIN_CURRENT)
-			ibuslim = ci_gl + SM_DC_CI_OFFSET_X2BAT + sm5461->pdata->ci_offset;
+			ibuslim = ci_gl + SM_DC_CI_OFFSET_X2BAT + SM5461_CI_OFFSET;
 		else
 			ibuslim = ci_gl + SM_DC_CI_OFFSET_X2BAT;
 
@@ -1755,12 +1738,6 @@ static int sm5461_charger_parse_dt(struct device *dev,
 	}
 	pr_info("%s: sm5461,fpdo_vnow_reg is %d\n", __func__, pdata->fpdo_vnow_reg);
 
-	ret = of_property_read_u32(np_sm5461, "sm5461,ci_offset", &pdata->ci_offset);
-	if (ret) {
-		dev_info(dev, "%s: sm5461,ci_offset is Empty\n", __func__);
-		pdata->ci_offset = 400;  /* 400mA */
-	}
-	dev_info(dev, "parse_dt: ci_offset=%dmA\n", pdata->ci_offset);
 
 	/* Parse: battery node */
 	np_battery = of_find_node_by_name(NULL, "battery");
@@ -2019,21 +1996,14 @@ static const struct of_device_id sm5461_of_match_table[] = {
 MODULE_DEVICE_TABLE(of, sm5461_of_match_table);
 #endif /* CONFIG_OF */
 
-#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-static int sm5461_charger_probe(struct i2c_client *i2c)
-#else
 static int sm5461_charger_probe(struct i2c_client *i2c,
 			const struct i2c_device_id *id)
-#endif
 {
 	struct sm5461_charger *sm5461;
 	struct sm_dc_info *pps_dc, *x2bat_dc;
 	struct sm5461_platform_data *pdata;
 	struct power_supply_config psy_cfg = {};
 	const struct of_device_id *of_id;
-#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	const struct i2c_device_id *id = i2c_client_get_device_id(i2c);
-#endif
 	int ret, chip;
 
 	dev_info(&i2c->dev, "%s: probe start\n", __func__);

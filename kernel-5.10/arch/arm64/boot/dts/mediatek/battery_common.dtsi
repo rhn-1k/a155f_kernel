@@ -288,10 +288,6 @@
 		io-channels = <&auxadc 3>, <&auxadc 6>, <&auxadc 5>;
 		io-channel-names = "adc-temp", "adc-chg-temp", "adc-usb-temp", "n/a", "n/a", "n/a", "n/a", "n/a";
 #endif
-#if 1
-	/*EUR_DETECTION_NODE*/
-	battery,eur_detection = <SEC_GPIO_REF(AP,pio,34) 0 >;
-#endif
 	};
 
 	/* sec_battery_cable
@@ -442,7 +438,7 @@
 		};
 	};
 	sec_battery_wireless_power_info: wireless-power-info {
-		count = <11>;
+		count = <9>;
 		current_group_0 {
 			wireless_power_class = <2>;
 			vout = <9000>;
@@ -515,31 +511,15 @@
 			ttf_charge_current = <2300>;
 			rx_power = <15000>;
 		};
-		current_group_9 {
-			wireless_power_class = <2>;
-			vout = <13000>;
-			input_current_limit = <1150>;
-			fast_charging_current = <3150>;
-			ttf_charge_current = <2300>;
-			rx_power = <15000>;
-		};
-		current_group_10 {
-			wireless_power_class = <2>;
-			vout = <10000>;
-			input_current_limit = <1100>;
-			fast_charging_current = <3150>;
-			ttf_charge_current = <2300>;
-			rx_power = <11000>;
-		};
 	};
 };
 
-/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel/kmodule/battery/suwon/common/dts/a16/battery_common.dtsi */
+/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel/kmodule/battery/suwon/common/dts/a15/battery_common.dtsi */
 #include <dt-bindings/battery/sec-battery.h>
 
-#define MAX_FV 4450
+#define MAX_FV 4380
 #define MAX_FCC 3150
-#define STD_CURR 3790
+#define STD_CURR 3820
 
 &sec_battery {
 	pinctrl-names = "default";
@@ -559,13 +539,13 @@
 	battery,dchg_thermal_source = <SEC_BATTERY_THERMAL_SOURCE_ADC>;
 	battery,dctp_by_cgtp;
 
-	battery,temp_adc_rsense = <19>;
+	battery,temp_adc_rsense = <15>;
 	battery,temp_table_adc = <
-		93 111 132 157 187
-		224 269 324 391 472
-		567 674 780 1017 1220
-		1460 1732 2030 2352 2688
-		3024 3343 3643
+		101 113 139 165 194
+		225 270 321 397 484
+		578 712 856 1026 1226
+		1439 1696 1939 2360 2707
+		3012 3360 3625
 		>;
 	battery,temp_table_data = <
 		900 850 800 750 700
@@ -576,11 +556,11 @@
 		>;
 
 	battery,usb_temp_table_adc = <
-		345 405 475 557 655
-		769 901 1055 1230 1432
-		1649 1868 2069 2465 2752
-		3043 3324 3585 3824 4035
-		4111 4111 4111
+		373 430 502 585 678
+		770 905 1051 1250 1463
+		1674 1948 2209 2483 2764
+		3021 3294 3505 3829 4050
+		4134 4134 4134
 		>;
 	battery,usb_temp_table_data = <
 		900 850 800 750 700
@@ -591,11 +571,11 @@
 		>;
 
 	battery,chg_temp_table_adc = <
-		324 391 461 541 637
-		748 882 1034 1207 1398
-		1623 1842 2043 2433 2722
-		3014 3298 3561 3803 4019
-		4111 4111 4111
+		360 414 489 570 662
+		763 896 1040 1229 1438
+		1653 1932 2193 2470 2751
+		3003 3283 3485 3809 4037
+		4134 4134 4134
 		>;
 	battery,chg_temp_table_data = <
 		900 850 800 750 700
@@ -610,9 +590,7 @@
 	battery,usb_protection_temp = <500>;
 	battery,temp_gap_bat_usb = <150>;
 
-	battery,wire_cool3_cool2_thresh = <80>;
-
-	battery,wire_warm_current = <3490>;	/* Less than or equal to 0.72C */
+	battery,wire_warm_current = <3500>;	/* Less than or equal to 0.72C */
 	battery,wire_cool1_current = <MAX_FCC>;	/* Less than or equal to 0.72C */
 	battery,wire_cool2_current = <1150>;	/* 0.24C */
 	battery,wire_cool3_current = <450>;	/* 0.1C */
@@ -638,17 +616,17 @@
 						390 380 380 370
 						1000 2400 1200 1800>;
 	battery,temp_table_LRP_25W = <
-						405 395 385 375
-						395 385 375 365
+						410 400 390 380
+						400 390 380 370
 						1700 3400 1100 2200>;
 
 	battery,full_check_type = <SEC_BATTERY_FULLCHARGED_FG_CURRENT>;
 	battery,full_check_type_2nd = <SEC_BATTERY_FULLCHARGED_FG_CURRENT>;
 
 	battery,chg_float_voltage = <MAX_FV>;
-	battery,high_temp_float = <4200>;
+	battery,high_temp_float = <4150>;
 	battery,low_temp_float = <MAX_FV>;
-	battery,swelling_high_rechg_voltage = <4050>;
+	battery,swelling_high_rechg_voltage = <4000>;
 	/* battery,swelling_low_rechg_voltage = <4230>; Default value is FV - 150mV */
 
 	battery,chg_ocp_current = <0>;
@@ -656,12 +634,10 @@
 	battery,max_charging_current = <MAX_FCC>;
 	battery,max_charging_charge_power = <25000>; /* 25W */
 
-
 	battery,age_data_by_common_offset; /* Calculate Based on Common Offset */
 	battery,age_data_cycle = <0 200 250 300 1001>;
 	battery,age_data_full_condition_soc = <93 92 91 90 89>;
 	battery,age_data_common_offset = <0 20 40 60 110>;
-	battery,en_batt_full_status_usage;
 
 	/* step charging option */
 	battery,step_chg_type = <0>;
@@ -670,43 +646,41 @@
 	battery,dc_step_chg_type = <0xE9>;
 	battery,dc_step_chg_charge_power = <22000>;
 	battery,dc_step_chg_step = <3>;
-	battery,dc_step_chg_cond_vol = <4140 4260 MAX_FV>; /*<25w 3step> STEP_CHARGING_CONDITION_VOLTAGE */
-	battery,dc_step_chg_val_vfloat = <4140 4260 MAX_FV>; /* <25w 3step> STEP_CHARGING_CONDITION_FLOAT_VOLTAGE */
-	battery,dc_step_chg_val_iout = <5540 4730 STD_CURR>; /* <25w 3step> */
+	battery,dc_step_chg_cond_vol = <4100 4200 MAX_FV>; /*<25w 3step> STEP_CHARGING_CONDITION_VOLTAGE */
+	battery,dc_step_chg_val_vfloat = <4100 4200 MAX_FV>; /* <25w 3step> STEP_CHARGING_CONDITION_FLOAT_VOLTAGE */
+	battery,dc_step_chg_val_iout = <5540 4770 STD_CURR>; /* <25w 3step> */
 	battery,dc_step_chg_iin_check_cnt = <3>;
-	battery,dc_step_chg_cond_soc = <50 68 100>; /* <25w 3step> STEP_CHARGING_CONDITION_SOC */
+	battery,dc_step_chg_cond_soc = <25 53 100>; /* <25w 3step> STEP_CHARGING_CONDITION_SOC */
 
 	battery,standard_curr = <STD_CURR>;
-	battery,expired_time = <10200>; /* 110 + 60 minutes = 170 */
+	battery,expired_time = <9600>; /* 100 + 60 minutes = 160 */
 	battery,recharging_expired_time = <5400>; /* 90 minutes */
 	battery,battery_full_capacity = <5000>;
 	battery,cisd_max_voltage_thr = <5000>; /* batttery ovp dettection voltage */
 
-	battery,ttf_hv_charge_current = <2840>;
-	battery,ttf_dc25_charge_current = <4648>;
+	battery,ttf_hv_charge_current = <2509>;
+	battery,ttf_dc25_charge_current = <4800>;
 	battery,ttf_capacity = <4900>;
 	battery,cv_data = <
-			3657	860	1720
-			3045	880	1629
-			2515	900	1498
-			1990	920	1337
-			1552	940	1126
-			1087	960	844
-			730	980	472
-			562	990	191
-			482	1000	0
+			3705	850	1740
+			3670	870	1640
+			3040	890	1540
+			2490	910	1410
+			1917	930	1240
+			1370	950	1010
+			1046	970	720
+			649	990	165
+			484	1000	0
 		>;
 
 	battery,support_vpdo;
 	battery,dchg_dc_in_swelling;
 	battery,boosting_voltage_aicl;
-	battery,set_fledon_buckoff_state;
-	battery,ap_wake_chg;
 };
 
 &sec_battery_cable {
 	full_check_current_1st = <490>;
-	full_check_current_2nd = <245>;
+	full_check_current_2nd = <250>;
 
 	current_group_1 {
 		cable_number = <

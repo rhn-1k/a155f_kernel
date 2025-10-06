@@ -319,10 +319,9 @@ static void process_normal_packet(struct sec_vibrator_drvdata *ddata, int freque
 {
 	sec_vibrator_set_frequency(ddata, frequency);
 
-	if (intensity) {
-		stop_packet(ddata, intensity);
+	if (intensity)
 		normal_run_packet(ddata, intensity);
-	} else
+	else
 		stop_packet(ddata, intensity);
 }
 
@@ -343,10 +342,9 @@ static void process_fifo_packet(struct sec_vibrator_drvdata *ddata, int file_num
 {
 	ddata->vib_ops->set_fifo_intensity(ddata->dev, intensity);
 
-	if (intensity) {
-		stop_packet(ddata, intensity);
+	if (intensity)
 		fifo_run_packet(ddata, file_num, intensity);
-	} else
+	else
 		stop_packet(ddata, intensity);
 }
 
@@ -424,8 +422,6 @@ static void sec_vibrator_process_engine_run_packet(struct sec_vibrator_drvdata *
 
 		sec_vibrator_haptic_disable(ddata);
 	}
-
-	pr_info("%s end\n", __func__);
 }
 
 static void timed_output_enable(struct sec_vibrator_drvdata *ddata, unsigned int value)

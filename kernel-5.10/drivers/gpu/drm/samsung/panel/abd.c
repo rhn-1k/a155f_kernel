@@ -25,13 +25,8 @@
 #include <linux/pm_runtime.h>
 #include <linux/reboot.h>
 #include <linux/rtc.h>
-#include <linux/irqdesc.h>
-#include <linux/sched/clock.h>
-#include <dt-bindings/gpio/gpio.h>
 
-#if !IS_ENABLED(CONFIG_DEVICE_MODULES_DRM_MEDIATEK)
-#include "kernel/irq/internals.h"
-#endif
+#include "../../../../../kernel/irq/internals.h"
 
 #define USDM_ABD_MTK_UEVENT	1
 
@@ -132,24 +127,6 @@ static struct platform_device *of_find_device_by_path(const char *name)
 
 	return pdev;
 }
-#endif
-
-#if IS_ENABLED(CONFIG_DEVICE_MODULES_DRM_MEDIATEK)
-enum {
-	IRQS_AUTODETECT		= 0x00000001,
-	IRQS_SPURIOUS_DISABLED	= 0x00000002,
-	IRQS_POLL_INPROGRESS	= 0x00000008,
-	IRQS_ONESHOT		= 0x00000020,
-	IRQS_REPLAY		= 0x00000040,
-	IRQS_WAITING		= 0x00000080,
-	IRQS_PENDING		= 0x00000200,
-	IRQS_SUSPENDED		= 0x00000800,
-	IRQS_TIMINGS		= 0x00001000,
-	IRQS_NMI		= 0x00002000,
-	IRQS_SYSFS		= 0x00004000,
-};
-#define istate core_internal_state__do_not_mess_with_it
-#define  _IRQ_NOAUTOEN IRQ_NOAUTOEN
 #endif
 
 struct platform_device *of_find_abd_dt_parent_platform_device(void)
@@ -570,6 +547,7 @@ static void __usdm_abd_pin_enable(struct abd_protect *abd, struct abd_pin_info *
 
 		if (pin->bug_flag == 1 || pin->bug_flag & IRQ_TYPE_LEVEL_MASK) {
 			dbg_info("%s has bug_flag(%d)\n", pin->name, pin->bug_flag);
+			BUG();
 		}
 
 		list_for_each_entry(sub_info, chain_list, node) {
@@ -643,6 +621,7 @@ static irqreturn_t usdm_abd_handler(int irq, void *dev_id)
 
 	if (pin->bug_flag == 1 || pin->bug_flag & IRQ_TYPE_EDGE_BOTH) {
 		dbg_info("%s has bug_flag(%d)\n", pin->name, pin->bug_flag);
+		BUG();
 	}
 
 	if (pin->active_level != pin->level)
@@ -855,8 +834,9 @@ static irqreturn_t usdm_abd_detatch_handler(int id, void *dev_id)
 
 int usdm_abd_pin_register_refresh_handler(struct abd_protect *abd, int irq)
 {
-	if (!abd || !abd->init_done)
-		return -EINVAL;
+	BUG_ON(!abd);
+
+	BUG_ON(!abd->init_done);
 
 	return usdm_abd_pin_register_handler(abd, irq, usdm_abd_refresh_handler, abd);
 }
@@ -1056,7 +1036,7 @@ static void of_usdm_abd_pin_register_handler_chain(struct abd_protect *abd)
 
 			dbg_none("info(%s) subinfo(%s)\n", info, subinfo);
 
-			gpio = of_get_named_gpio(np, info, 0);
+			gpio = of_get_named_gpio_flags(np, info, 0, NULL);
 			if (!gpio_is_valid(gpio)) {
 				dbg_info("gpio_is_valid fail, gpio: %s, %d\n", info, gpio);
 				continue;
@@ -1411,7 +1391,7 @@ static int of_usdm_abd_pin_register_handler(struct abd_protect *abd, struct abd_
 		char *keyword, irq_handler_t func)
 {
 	int ret = 0, gpio = 0, to_irq = 0;
-	unsigned int flags;
+	enum of_gpio_flags flags;
 	struct device_node *np = NULL;
 	struct platform_device *pdev = NULL;
 	unsigned int irqf_type = IRQF_TRIGGER_RISING;
@@ -1433,7 +1413,7 @@ static int of_usdm_abd_pin_register_handler(struct abd_protect *abd, struct abd_
 	if (!of_find_property(np, dts_name, NULL))
 		goto exit;
 
-	gpio = of_get_named_gpio(np, dts_name, 0);
+	gpio = of_get_named_gpio_flags(np, dts_name, 0, &flags);
 	if (!gpio_is_valid(gpio)) {
 		dbg_info("gpio_is_valid fail, gpio: %s, %d\n", dts_name, gpio);
 		goto exit;
@@ -1452,12 +1432,8 @@ static int of_usdm_abd_pin_register_handler(struct abd_protect *abd, struct abd_
 
 	pin->desc = (pin->irq) ? irq_to_desc(pin->irq) : kzalloc(sizeof(struct irq_desc), GFP_KERNEL);
 
-	if (of_property_read_u32_index(np, dts_name, 2, &flags)) {
-		dbg_info("%s:failed to read gpio flag\n", np->name);
-		goto exit;
-	}
-	pin->active_level = !(flags & GPIO_ACTIVE_LOW);
-	irqf_type = (!pin->active_level) ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING;
+	pin->active_level = !(flags & OF_GPIO_ACTIVE_LOW);
+	irqf_type = (flags & OF_GPIO_ACTIVE_LOW) ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING;
 	dbg_info("%s is active %s%s\n", keyword, pin->active_level ? "high" : "low",
 		(pin->irq) ? ((irqf_type == IRQF_TRIGGER_RISING) ? ", rising" : ", falling") : "");
 

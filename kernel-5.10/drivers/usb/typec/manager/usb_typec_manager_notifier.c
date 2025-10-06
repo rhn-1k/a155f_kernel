@@ -272,17 +272,6 @@ static void manager_event_work(int src, int dest, int id, int sub1, int sub2, in
 
 	utmanager_info("%s src:%s dest:%s\n", __func__,
 		pdic_event_src_string(src), pdic_event_dest_string(dest));
-
-	if (!typec_manager.manager_noti_wq) {
-		utmanager_err("%s: manager_noti_wq is null\n", __func__);
-		return;
-	}
-
-	if (!typec_manager.manager_muic_noti_wq) {
-		utmanager_err("%s: manager_muic_noti_wq is null\n", __func__);
-		return;
-	}
-
 	event_work = kmalloc(sizeof(struct typec_manager_event_work), GFP_ATOMIC);
 	if (!event_work) {
 		utmanager_err("%s: failed to alloc for event_work\n", __func__);
@@ -450,12 +439,11 @@ static void manager_usb_enum_state_check_work(struct work_struct *work)
 #endif
 
 	if ((typec_manager.usb.dr != USB_STATUS_NOTIFY_ATTACH_UFP)
-			|| (dwc3_link_check != 0)) {
-		utmanager_info("%s: skip case : usb.dr=%s, dwc3_link_check = %d\n", __func__,
-			pdic_usbstatus_string(typec_manager.usb.dr), dwc3_link_check);
+			|| (dwc3_link_check == 1)) {
+		utmanager_info("%s: skip case : dwc3_link = %d\n", __func__, dwc3_link_check);
 		return;
 	}
-	utmanager_info("%s: usb=0x%X, pd=%d dwc3_link_check=%d\n", __func__,
+	utmanager_info("%s: usb=0x%X, pd=%d dwc3_link=%d\n", __func__,
 		typec_manager.usb.enum_state, typec_manager.pd_con_state, dwc3_link_check);
 
 	if (!typec_manager.usb.enum_state) {
@@ -1459,6 +1447,10 @@ int manager_notifier_register(struct notifier_block *nb, notifier_fn_t notifier,
 		if (typec_manager.usb.dr) {
 			m_noti.sub1 = PDIC_NOTIFY_ATTACH;
 			m_noti.sub2 = typec_manager.usb.dr;
+		} else if (typec_manager.classified_cable_type == MANAGER_NOTIFY_MUIC_USB) {
+			m_noti.sub1 = PDIC_NOTIFY_ATTACH;
+			typec_manager.usb.dr = USB_STATUS_NOTIFY_ATTACH_UFP;
+			m_noti.sub2 = USB_STATUS_NOTIFY_ATTACH_UFP;
 #if IS_ENABLED(CONFIG_MUIC_POGO)
 		} else if (typec_manager.is_muic_pogo) {
 			m_noti.sub1 = typec_manager.muic.attach_state;
@@ -1690,12 +1682,8 @@ static int manager_notifier_init(void)
 
 	typec_manager.manager_noti_wq =
 		alloc_ordered_workqueue("typec_manager_event", WQ_FREEZABLE | WQ_MEM_RECLAIM);
-	if (!typec_manager.manager_noti_wq)
-		utmanager_err("%s: Failed to allocate noti workqueue\n", __func__);
 	typec_manager.manager_muic_noti_wq =
 		alloc_ordered_workqueue("typec_manager_muic_event", WQ_FREEZABLE | WQ_MEM_RECLAIM);
-	if (!typec_manager.manager_muic_noti_wq)
-		pr_err("%s: Failed to allocate muic noti workqueue\n", __func__);
 
 	BLOCKING_INIT_NOTIFIER_HEAD(&(typec_manager.manager_notifier));
 	BLOCKING_INIT_NOTIFIER_HEAD(&(typec_manager.manager_muic_notifier));

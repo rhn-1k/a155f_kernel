@@ -25,6 +25,7 @@
 
 #define HUB_RESET_REQ_NO_EVENT		0x1a
 #define HUB_RESET_REQ_TASK_FAILURE	0x1b
+#define MINI_DUMP_LENGTH		512
 #define MODEL_NAME_MAX 10
 
 enum {
@@ -81,7 +82,6 @@ struct shub_data_t {
 	u8 lcd_status;
 	u8 intent_screen_state;
 	u8 display_screen_state;
-	u32 brightness_resolution;
 
 	struct workqueue_struct *shub_wq;
 
@@ -96,6 +96,7 @@ struct shub_data_t {
 
 	int sensor_ldo_en;
 	int prox_ldo_en;
+	char mini_dump[MINI_DUMP_LENGTH];
 	char model_name[MODEL_NAME_MAX];
 };
 
@@ -120,7 +121,8 @@ int get_reset_count(void);
 struct reset_info_t get_reset_info(void);
 
 bool is_shub_working(void);
-int shub_send_status(u8, char *, int);
+int shub_send_status_with_buffer(u8, char *, int);
+int shub_send_status(u8);
 int queue_refresh_task(void);
 
 int shub_probe(struct platform_device *pdev);
