@@ -69,29 +69,22 @@ jobs:
           echo "CONFIG_LOCALVERSION_AUTO=n" >> $DEFCONFIG_FILE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Generate Build Config
-        working-directory: ${{ steps.workspace.outputs.work_dir }}/kernel-5.10
-        run: |
-          echo "--- Generating build.config from the correct directory ---"
-          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
-
-      - name: Build The Kernel (The Final, Corrected Path)
+      - name: Build The Kernel (The True Developer Sequence)
         working-directory: ${{ steps.workspace.outputs.work_dir }}
         run: |
-          echo "--- Starting The Main Build ---"
+          echo "--- Starting The Main Build using the correct sequence ---"
           
-          # *** THE ULTIMATE, FINAL, TRUE FIX: Patch the build script at the CORRECT path ***
-          BUILD_SCRIPT_PATH="kernel/build/build.sh"
-          sed -i 's|export PATH=${TOOLCHAIN_PATH}/bin$|export PATH=${TOOLCHAIN_PATH}/bin:${PATH}|' $BUILD_SCRIPT_PATH
+          # This block mimics the official build_kernel.sh script EXACTLY
+          cd kernel-5.10
+          python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays "entry_level.config" -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
           
           export PLATFORM_VERSION=12
-          export OUT_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export DIST_DIR="out/target/product/a15/obj/KERNEL_OBJ"
-          export BUILD_CONFIG="out/target/product/a15/obj/KERNEL_OBJ/build.config"
-          export MERGE_CONFIG="kernel-5.10/scripts/kconfig/merge_config.sh"
+          export OUT_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export DIST_DIR="../out/target/product/a15/obj/KERNEL_OBJ"
+          export BUILD_CONFIG="../out/target/product/a15/obj/KERNEL_OBJ/build.config"
           
-          # Run the patched script from the root, using its CORRECT full path
-          ./$BUILD_SCRIPT_PATH
+          cd ../kernel
+          ./build/build.sh
 
       - name: Repack and Upload Final Artifact
         working-directory: ${{ steps.workspace.outputs.work_dir }}
