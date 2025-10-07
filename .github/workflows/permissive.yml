@@ -83,23 +83,25 @@ jobs:
           
           mkdir ramdisk_patch_dir
           cd ramdisk_patch_dir
-          $MAGISKBOOT cpio ../ramdisk.cpio extract
           
-          # This is the crucial part: find all occurrences of "setenforce 1" and replace them with "setenforce 0"
+          # Corrected path for magiskboot after changing directory
+          ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract
+          
           echo "Forcing permissive state in all .rc files..."
           find . -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
           
-          $MAGISKBOOT cpio ../ramdisk.cpio 'pack .'
+          # Corrected path for magiskboot after changing directory
+          ../scripts/bin/magiskboot cpio ../ramdisk.cpio 'pack .'
+          
           cd ..
           $MAGISKBOOT repack $BOOT_IMG_TEMP
           
-          # Overwrite the original boot.img.lz4 with the patched version
           lz4 -f $BOOT_IMG_TEMP $BOOT_LZ4
           
           rm -rf ramdisk_patch_dir ramdisk.cpio stock_boot.img $BOOT_IMG_TEMP
           echo "--- Base boot.img.lz4 is now patched. ---"
 
-          # Step 3: Run the final repack script which will use the new kernel and the patched boot image
+          # Step 3: Run the final repack script
           echo "--- Running final repack script ---"
           ./scripts/repack
           
