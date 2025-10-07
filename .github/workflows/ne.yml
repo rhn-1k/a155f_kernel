@@ -1,4 +1,4 @@
-name: Test VBMETA Repacking
+name: Test VBMETA Repacking (Final Method)
 
 on:
   workflow_dispatch:
@@ -23,10 +23,10 @@ jobs:
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Patch and Repack with VBMETA handling
+      - name: Patch and Repack (Correct AVB Method)
         id: patch_step
         run: |
-          echo "--- Starting Ramdisk Patch Test with VBMETA handling ---"
+          echo "--- Starting Ramdisk Patch Test (Correct AVB Method) ---"
           MAGISKBOOT=./scripts/bin/magiskboot
           AVBTOOL=./scripts/bin/avb/avbtool.py
           BOOT_LZ4=./boot.img.lz4
@@ -41,35 +41,24 @@ jobs:
           lz4 -d $BOOT_LZ4 $BOOT_IMG_TEMP
           $MAGISKBOOT unpack $BOOT_IMG_TEMP
           
-          # 2. Create a directory and extract the ramdisk
+          # 2. Patch the ramdisk
           mkdir ramdisk_patch_dir
-          cd ramdisk_patch_dir
-          ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract
-          
-          # 3. Patch the .rc files
-          echo "Forcing permissive state in all .rc files..."
-          find . -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
-          
-          # 4. Repack the ramdisk using the standard Linux cpio tool for reliability
-          echo "Repacking ramdisk using standard cpio tool..."
-          find . | cpio -o -H newc > ../ramdisk_new.cpio
-          cd ..
+          (cd ramdisk_patch_dir && ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract)
+          find ramdisk_patch_dir -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
+          (cd ramdisk_patch_dir && find . | cpio -o -H newc > ../ramdisk_new.cpio)
           mv ramdisk_new.cpio ramdisk.cpio
           
-          # 5. Repack the boot image using magiskboot
-          # This will create a 'new-boot.img' that is NOT signed
-          $MAGISKBOOT repack $BOOT_IMG_TEMP new-boot.img
+          # 3. Rebuild the boot image from components, DO NOT USE REPACK
+          # This avoids the VBMETA signature check issue within repack
+          echo "Rebuilding boot image from components..."
+          $MAGISKBOOT pack -h header -k kernel -r ramdisk.cpio new-boot.img
           
-          # 6. Handle VBMETA: Re-sign the new boot image or create a disabled footer
-          # This is the crucial step that was missing
-          echo "Handling VBMETA..."
-          # This command adds a vbmeta footer that essentially disables verification for this image
-          # It's a common method for custom boot images.
+          # 4. Add the AVB hash footer to the newly created image
+          echo "Adding AVB hash footer..."
           $AVBTOOL add_hash_footer --image new-boot.img --partition_name boot --partition_size $(wc -c < new-boot.img)
           
-          echo "✅ SUCCESS: The boot image was patched and a VBMETA footer was added."
-          echo "A file named 'new-boot.img' has been created successfully."
+          echo "✅ SUCCESS: 'new-boot.img' was created and signed with a dev footer."
           
           # Clean up
-          rm -rf ramdisk_patch_dir ramdisk.cpio stock_boot.img $BOOT_IMG_TEMP
+          rm -rf ramdisk_patch_dir ramdisk.cpio stock_boot.img header kernel $BOOT_IMG_TEMP
 
