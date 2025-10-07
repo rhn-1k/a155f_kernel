@@ -1,4 +1,4 @@
-name: Test Repack (Based on Your Script)
+name: Test Repack (Based on Your Script - Corrected Paths)
 
 on:
   workflow_dispatch:
@@ -27,26 +27,27 @@ jobs:
         id: patch_step
         run: |
           echo "--- Starting Test: Following your repack.sh logic ---"
-          MAGISKBOOT=./scripts/bin/magiskboot
-          AVBTOOL=./scripts/bin/avb/avbtool.py
-          BOOT_LZ4=./boot.img.lz4
-          BOOT_IMG=./boot.img
-          WORKSPACE=./workspace
+          # Use absolute paths to avoid issues with 'cd'
+          MAGISKBOOT=$GITHUB_WORKSPACE/scripts/bin/magiskboot
+          AVBTOOL=$GITHUB_WORKSPACE/scripts/bin/avb/avbtool.py
+          BOOT_LZ4=$GITHUB_WORKSPACE/boot.img.lz4
+          BOOT_IMG=$GITHUB_WORKSPACE/boot.img
+          WORKSPACE=$GITHUB_WORKSPACE/workspace
           
-          # 1. Prepare environment (from your script)
+          # 1. Prepare environment
           mkdir -p $WORKSPACE
           rm -rf $WORKSPACE/*
           lz4 -d $BOOT_LZ4 $BOOT_IMG
 
-          # 2. Unpack boot.img into workspace (from your script)
+          # 2. Unpack boot.img into workspace
           cd $WORKSPACE
-          $MAGISKBOOT unpack -h "${PARENTDIR:-..}/$BOOT_IMG"
+          $MAGISKBOOT unpack -h $BOOT_IMG
           
-          # 3. <<< THIS IS OUR PATCHING STEP >>>
+          # 3. Patch the ramdisk.cpio
           echo "Patching ramdisk.cpio..."
           mkdir ramdisk_work
           # Use subshell to avoid cd back and forth
-          (cd ramdisk_work && ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract)
+          (cd ramdisk_work && $MAGISKBOOT cpio ../ramdisk.cpio extract)
           find ramdisk_work -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
           # Use standard cpio to reliably rebuild the ramdisk
           (cd ramdisk_work && find . | cpio -o -H newc > ../ramdisk_new.cpio)
@@ -54,30 +55,33 @@ jobs:
           rm -rf ramdisk_work
           echo "Ramdisk patched successfully."
           
-          # 4. Repack the boot image (from your script)
-          # We need the original kernel from unpack, so we don't delete it
+          # 4. Repack the boot image
           echo "Repacking boot image..."
-          $MAGISKBOOT repack "${PARENTDIR:-..}/$BOOT_IMG" new-boot.img
+          # We are already in the WORKSPACE directory
+          $MAGISKBOOT repack $BOOT_IMG new-boot.img
           
-          # 5. Sign the new boot image (from your script)
+          # 5. Sign the new boot image
           echo "Signing new boot image..."
-          # Note: This assumes a fixed partition size for the test. Your script uses a fixed value too.
-          python3 "${PARENTDIR:-..}/$AVBTOOL" add_hash_footer \
+          # This step requires the certs to be present. Your script creates them.
+          # For this test, we assume they exist or we create them.
+          mkdir -p $GITHUB_WORKSPACE/scripts/bin/certs
+          # Let's use the same fixed partition size as your script for consistency
+          python3 $AVBTOOL add_hash_footer \
             --partition_name boot \
             --partition_size 67108864 \
             --image new-boot.img \
             --algorithm SHA256_RSA4096 \
-            --key "${PARENTDIR:-..}/scripts/bin/certs/sign.pk8"
+            --key "$GITHUB_WORKSPACE/scripts/bin/certs/sign.pk8"
           
           # 6. Verify success
           if [ -f "new-boot.img" ]; then
-            echo "✅ SUCCESS: 'new-boot.img' was created and signed, following your script's logic."
+            echo "✅ SUCCESS: 'new-boot.img' was created and signed."
           else
             echo "::error:: Repack failed. 'new-boot.img' was not created."
             exit 1
           fi
           
-          cd ..
-          # Clean up
+          # Go back to the main directory before cleaning up
+          cd $GITHUB_WORKSPACE
           rm -rf $WORKSPACE $BOOT_IMG
 
