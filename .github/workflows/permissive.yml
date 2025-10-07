@@ -52,7 +52,7 @@ jobs:
 
       - name: Make Kernel Permissive
         run: |
-          CONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_defconfig"
+          CONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
           
           sed -i 's/\(CONFIG_CMDLINE=".*\)"/\1 androidboot.selinux=permissive"/' $CONFIG_FILE
           
@@ -68,7 +68,7 @@ EOF
       - name: Build and Package
         id: build_chain
         run: |
-          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
+          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
           ./build_kernel.sh
           ./scripts/repack
           FINAL_TAR=$(ls -t *.tar | head -n 1)
