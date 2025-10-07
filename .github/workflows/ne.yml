@@ -1,4 +1,4 @@
-name: Test Repack (Based on Your Script - Corrected Paths)
+name: Test Repack (XDA Proven Method)
 
 on:
   workflow_dispatch:
@@ -16,72 +16,82 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y lz4 python3
+          sudo apt-get install -y lz4 python3 openssl
 
       - name: Set Scripts Executable
         run: |
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Patch and Repack (Following YOUR repack.sh logic)
+      - name: Patch and Repack (XDA Proven Method)
         id: patch_step
         run: |
-          echo "--- Starting Test: Following your repack.sh logic ---"
-          # Use absolute paths to avoid issues with 'cd'
+          echo "--- Starting Test: Following XDA Proven Method ---"
+          # Use absolute paths to be safe
           MAGISKBOOT=$GITHUB_WORKSPACE/scripts/bin/magiskboot
           AVBTOOL=$GITHUB_WORKSPACE/scripts/bin/avb/avbtool.py
           BOOT_LZ4=$GITHUB_WORKSPACE/boot.img.lz4
           BOOT_IMG=$GITHUB_WORKSPACE/boot.img
           WORKSPACE=$GITHUB_WORKSPACE/workspace
+          CERTDIR=$GITHUB_WORKSPACE/scripts/bin/certs
           
           # 1. Prepare environment
           mkdir -p $WORKSPACE
           rm -rf $WORKSPACE/*
+          mkdir -p $CERTDIR
           lz4 -d $BOOT_LZ4 $BOOT_IMG
 
-          # 2. Unpack boot.img into workspace
-          cd $WORKSPACE
+          # 2. Unpack boot.img and move components to workspace
           $MAGISKBOOT unpack -h $BOOT_IMG
+          mv kernel kernel_dtb ramdisk.cpio second dtb extra recovery_dtbo header $WORKSPACE/ 2>/dev/null || true
           
-          # 3. Patch the ramdisk.cpio
-          echo "Patching ramdisk.cpio..."
-          mkdir ramdisk_work
-          # Use subshell to avoid cd back and forth
-          (cd ramdisk_work && $MAGISKBOOT cpio ../ramdisk.cpio extract)
-          find ramdisk_work -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
-          # Use standard cpio to reliably rebuild the ramdisk
-          (cd ramdisk_work && find . | cpio -o -H newc > ../ramdisk_new.cpio)
-          mv ramdisk_new.cpio ramdisk.cpio
-          rm -rf ramdisk_work
+          # Change to workspace directory
+          cd $WORKSPACE
+
+          # 3. Patch ramdisk.cpio IN-PLACE (The XDA Method)
+          echo "Patching ramdisk.cpio in-place..."
+          mkdir -p temp_rc_files
+
+          # Find all .rc files inside the cpio and process them
+          $MAGISKBOOT cpio ramdisk.cpio "ls" | grep "\.rc$" | while read -r rcfile; do
+            echo "Patching file: $rcfile"
+            # Extract the single file
+            $MAGISKBOOT cpio ramdisk.cpio "extract $rcfile temp_rc_files/$rcfile"
+            # Patch it
+            sed -i 's/setenforce 1/setenforce 0/g' "temp_rc_files/$rcfile"
+            # Get original permissions
+            PERMS=$($MAGISKBOOT cpio ramdisk.cpio "ls" | grep "$rcfile" | awk '{print $1}')
+            # Add it back, overwriting the original
+            $MAGISKBOOT cpio ramdisk.cpio "add $PERMS $rcfile temp_rc_files/$rcfile"
+          done
+          rm -rf temp_rc_files
           echo "Ramdisk patched successfully."
-          
-          # 4. Repack the boot image
+
+          # 4. Repack the boot image using the original as a template
           echo "Repacking boot image..."
-          # We are already in the WORKSPACE directory
-          $MAGISKBOOT repack $BOOT_IMG new-boot.img
+          $MAGISKBOOT repack ../$BOOT_IMG new-boot.img
           
           # 5. Sign the new boot image
           echo "Signing new boot image..."
-          # This step requires the certs to be present. Your script creates them.
-          # For this test, we assume they exist or we create them.
-          mkdir -p $GITHUB_WORKSPACE/scripts/bin/certs
-          # Let's use the same fixed partition size as your script for consistency
+          if [ ! -f "$CERTDIR/sign.pk8" ]; then
+            openssl genrsa -out $CERTDIR/sign.pk8 4096
+          fi
+          
           python3 $AVBTOOL add_hash_footer \
             --partition_name boot \
             --partition_size 67108864 \
             --image new-boot.img \
             --algorithm SHA256_RSA4096 \
-            --key "$GITHUB_WORKSPACE/scripts/bin/certs/sign.pk8"
+            --key $CERTDIR/sign.pk8
           
           # 6. Verify success
           if [ -f "new-boot.img" ]; then
-            echo "✅ SUCCESS: 'new-boot.img' was created and signed."
+            echo "✅ SUCCESS: 'new-boot.img' was created and signed using the XDA method."
           else
             echo "::error:: Repack failed. 'new-boot.img' was not created."
             exit 1
           fi
           
-          # Go back to the main directory before cleaning up
-          cd $GITHUB_WORKSPACE
+          # Cleanup
+          cd ..
           rm -rf $WORKSPACE $BOOT_IMG
-
