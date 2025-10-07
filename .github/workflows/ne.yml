@@ -1,10 +1,10 @@
-name: Test Find and Patch RC Files
+name: Test Repack (Final, Based on Your Script)
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-find-and-patch:
+  test-repack:
     runs-on: ubuntu-22.04
 
     steps:
@@ -13,29 +13,79 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find and Patch setenforce 1
+      - name: Install Dependencies
         run: |
-          echo "--- Starting Test: Searching for and patching 'setenforce 1' in source .rc files ---"
+          sudo apt-get update
+          sudo apt-get install -y lz4 python3 openssl
+
+      - name: Set Scripts Executable
+        run: |
+          chmod +x scripts/bin/magiskboot
+          chmod +x scripts/bin/avb/avbtool.py
+
+      - name: Patch and Repack (Following YOUR repack.sh logic)
+        id: patch_step
+        run: |
+          echo "--- Starting Test: Following your repack.sh logic ---"
+          # Use absolute paths to avoid all 'cd' issues
+          ROOT=$GITHUB_WORKSPACE
+          MAGISKBOOT=$ROOT/scripts/bin/magiskboot
+          AVBTOOL=$ROOT/scripts/bin/avb/avbtool.py
+          BOOT_LZ4=$ROOT/boot.img.lz4
+          BOOT_IMG=$ROOT/boot.img
+          WORKSPACE=$ROOT/workspace
+          CERTDIR=$ROOT/scripts/bin/certs
           
-          # Find all .rc files anywhere in the project that contain "setenforce 1"
-          RC_FILES=$(grep -lr "setenforce 1" --include="*.rc" .)
+          # 1. Prepare environment (from your script)
+          mkdir -p $WORKSPACE
+          rm -rf $WORKSPACE/*
+          mkdir -p $CERTDIR
+          lz4 -d $BOOT_LZ4 $BOOT_IMG
+
+          # 2. Unpack boot.img and move components to workspace (from your script)
+          $MAGISKBOOT unpack -h $BOOT_IMG
+          mv kernel kernel_dtb ramdisk.cpio second dtb extra recovery_dtbo header $WORKSPACE/ 2>/dev/null || true
           
-          if [ -z "$RC_FILES" ]; then
-            echo "✅ SUCCESS: No .rc files with 'setenforce 1' were found. This means either they don't exist or they are already permissive."
-            exit 0
+          # 3. Patch the ramdisk.cpio inside the workspace
+          cd $WORKSPACE
+          echo "Patching ramdisk.cpio..."
+          mkdir ramdisk_work
+          # Use magiskboot to extract the cpio contents
+          $MAGISKBOOT cpio ramdisk.cpio extract -r ramdisk_work
+          # Find and replace setenforce 1
+          find ramdisk_work -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
+          # Rebuild the cpio using the standard tool for reliability
+          (cd ramdisk_work && find . | cpio -o -H newc > ../ramdisk_new.cpio)
+          mv ramdisk_new.cpio ramdisk.cpio
+          rm -rf ramdisk_work
+          echo "Ramdisk patched successfully."
+          
+          # 4. Repack the boot image (from your script)
+          echo "Repacking boot image..."
+          # Use the original boot.img as the template
+          $MAGISKBOOT repack $ROOT/boot.img new-boot.img
+          
+          # 5. Sign the new boot image (from your script)
+          echo "Signing new boot image..."
+          if [ ! -f "$CERTDIR/sign.pk8" ]; then
+            openssl genrsa -out $CERTDIR/sign.pk8 4096
           fi
           
-          echo "Found the following files to patch:"
-          echo "$RC_FILES"
+          python3 $AVBTOOL add_hash_footer \
+            --partition_name boot \
+            --partition_size 67108864 \
+            --image new-boot.img \
+            --algorithm SHA256_RSA4096 \
+            --key $CERTDIR/sign.pk8
           
-          # Use xargs to run sed on all found files
-          echo "$RC_FILES" | xargs -I {} sed -i 's/setenforce 1/setenforce 0/g' {}
-          
-          echo "--- Verifying that the patch was successful ---"
-          # This command will search again. If it finds anything, it means the patch failed.
-          if grep -lr "setenforce 1" --include="*.rc" .; then
-            echo "::error:: PATCH FAILED! 'setenforce 1' is still found in some files."
-            exit 1
+          # 6. Verify success
+          if [ -f "new-boot.img" ]; then
+            echo "✅ SUCCESS: 'new-boot.img' was created and signed."
           else
-            echo "✅ SUCCESS: All found instances of 'setenforce 1' have been replaced with 'setenforce 0'."
+            echo "::error:: Repack failed. 'new-boot.img' was not created."
+            exit 1
           fi
+          
+          # Cleanup
+          cd ..
+          rm -rf $WORKSPACE $BOOT_IMG
