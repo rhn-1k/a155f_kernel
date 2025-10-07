@@ -1,4 +1,4 @@
-name: Test Repack (Final, Based on Your Script)
+name: Test Repack (Based on Your Script's Logic)
 
 on:
   workflow_dispatch:
@@ -27,13 +27,13 @@ jobs:
         id: patch_step
         run: |
           echo "--- Starting Test: Following your repack.sh logic ---"
-          # Use absolute paths to avoid all 'cd' issues
+          # Define absolute paths to avoid any 'cd' related errors
           ROOT=$GITHUB_WORKSPACE
           MAGISKBOOT=$ROOT/scripts/bin/magiskboot
           AVBTOOL=$ROOT/scripts/bin/avb/avbtool.py
           BOOT_LZ4=$ROOT/boot.img.lz4
           BOOT_IMG=$ROOT/boot.img
-          WORKSPACE=$ROOT/workspace
+          WORKSPACE=$ROOT/scripts/bin/workspace # Your script uses this specific path for the workspace
           CERTDIR=$ROOT/scripts/bin/certs
           
           # 1. Prepare environment (from your script)
@@ -42,28 +42,31 @@ jobs:
           mkdir -p $CERTDIR
           lz4 -d $BOOT_LZ4 $BOOT_IMG
 
-          # 2. Unpack boot.img and move components to workspace (from your script)
-          $MAGISKBOOT unpack -h $BOOT_IMG
-          mv kernel kernel_dtb ramdisk.cpio second dtb extra recovery_dtbo header $WORKSPACE/ 2>/dev/null || true
-          
-          # 3. Patch the ramdisk.cpio inside the workspace
+          # 2. Unpack boot.img into workspace (from your script)
+          # Your script changes to workspace, so we will do the same to replicate it exactly
           cd $WORKSPACE
-          echo "Patching ramdisk.cpio..."
-          mkdir ramdisk_work
-          # Use magiskboot to extract the cpio contents
-          $MAGISKBOOT cpio ramdisk.cpio extract -r ramdisk_work
-          # Find and replace setenforce 1
-          find ramdisk_work -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
-          # Rebuild the cpio using the standard tool for reliability
-          (cd ramdisk_work && find . | cpio -o -H newc > ../ramdisk_new.cpio)
-          mv ramdisk_new.cpio ramdisk.cpio
-          rm -rf ramdisk_work
+          $MAGISKBOOT unpack -h ../../$BOOT_IMG
+          
+          # 3. Patch the ramdisk.cpio that is now inside the workspace
+          echo "Patching ramdisk.cpio in-place..."
+          mkdir -p temp_rc_files
+          # Use magiskboot to find, extract, patch, and re-add the rc files
+          $MAGISKBOOT cpio ramdisk.cpio "ls" | grep "\.rc$" | while read -r rcfile; do
+            echo "Patching file: $rcfile"
+            $MAGISKBOOT cpio ramdisk.cpio "extract $rcfile temp_rc_files/$rcfile"
+            sed -i 's/setenforce 1/setenforce 0/g' "temp_rc_files/$rcfile"
+            PERMS=$($MAGISKBOOT cpio ramdisk.cpio "ls" | grep "$rcfile" | awk '{print $1}')
+            $MAGISKBOOT cpio ramdisk.cpio "add $PERMS $rcfile temp_rc_files/$rcfile"
+          done
+          rm -rf temp_rc_files
           echo "Ramdisk patched successfully."
           
           # 4. Repack the boot image (from your script)
           echo "Repacking boot image..."
-          # Use the original boot.img as the template
-          $MAGISKBOOT repack $ROOT/boot.img new-boot.img
+          # Your script uses the original boot.img as a template.
+          # We are inside WORKSPACE, so the path is ../../boot.img
+          # The kernel file is already in the workspace from the unpack step.
+          $MAGISKBOOT repack ../../$BOOT_IMG new-boot.img
           
           # 5. Sign the new boot image (from your script)
           echo "Signing new boot image..."
@@ -87,5 +90,7 @@ jobs:
           fi
           
           # Cleanup
-          cd ..
+          cd .. # Go back to scripts/bin
+          cd .. # Go back to scripts
+          cd .. # Go back to root
           rm -rf $WORKSPACE $BOOT_IMG
