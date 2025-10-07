@@ -81,31 +81,20 @@ jobs:
           lz4 -d $BOOT_LZ4 $BOOT_IMG_TEMP
           $MAGISKBOOT unpack $BOOT_IMG_TEMP
           
-          # Create a temporary directory to work in
           mkdir ramdisk_patch_dir
           cd ramdisk_patch_dir
           
-          # Extract the original ramdisk
           ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract
           
-          # Find and replace "setenforce 1" with "setenforce 0"
           echo "Forcing permissive state in all .rc files..."
           find . -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
           
-          # Remove the old ramdisk.cpio and create a new one from our patched directory
-          echo "Repacking modified ramdisk..."
           cd ..
-          rm -f ramdisk.cpio
-          $MAGISKBOOT cpio ramdisk.cpio "add 0750 init init"
-          for file in $(find ramdisk_patch_dir -mindepth 1); do
-              entry_path=${file#ramdisk_patch_dir/}
-              if [ -d "$file" ]; then
-                  $MAGISKBOOT cpio ramdisk.cpio "mkdir 755 $entry_path"
-              else
-                  $MAGISKBOOT cpio ramdisk.cpio "add 755 $entry_path $file"
-              fi
-          done
-
+          
+          # The CORRECT and SIMPLE way to repack the cpio
+          echo "Repacking modified ramdisk..."
+          $MAGISKBOOT cpio ramdisk.cpio pack ramdisk_patch_dir
+          
           # Repack the final boot.img with the new ramdisk
           $MAGISKBOOT repack $BOOT_IMG_TEMP
           
