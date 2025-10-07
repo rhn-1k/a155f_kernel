@@ -1,4 +1,4 @@
-name: Build A155F Kernel
+name: Build A155F Kernel with KernelSU Merged
 
 on:
   workflow_dispatch:
@@ -38,45 +38,51 @@ jobs:
           tar -xf "$FILE_NAME"
           rm "$FILE_NAME"
 
-      - name: Apply Custom Recovery Reboot Patch
-        run: |
-          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' kernel-5.10/drivers/power/reset/reboot-mode.c
-
       - name: Set Scripts Executable
         run: |
           chmod +x build_kernel.sh
           chmod +x clean_build.sh
-          chmod +x kernel-5.10/scripts/config
+          chmod +x scripts/config
           chmod +x scripts/repack
+          chmod +x scripts/kernelsu
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Build The Kernel
+      - name: Execute Full Build Chain
+        id: build_chain
         run: |
+          set -e
+          
+          echo "### STEP 1: Applying Patches and Setting Version ###"
+          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' kernel-5.10/drivers/power/reset/reboot-mode.c
           echo "CONFIG_LOCALVERSION_AUTO=n" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
           echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.DEVELOPER_NAME }}\"" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
+          
+          echo "### STEP 2: Building The Kernel ###"
           ./build_kernel.sh
-
-      - name: Repack The Boot Image
-        working-directory: ./scripts
-        run: |
+          
+          echo "### STEP 3: Repacking Boot Image with New Kernel ###"
+          cd scripts
           ./repack
-
-      - name: Set Final Image Path
-        id: set_path
-        run: |
-          FINAL_IMAGE="boot-repacked-signed.img"
-          if [ ! -f "$FINAL_IMAGE" ]; then
-            echo "::error::Final image $FINAL_IMAGE not found in root directory!"
+          
+          echo "### STEP 4: Injecting KernelSU into Repacked Image ###"
+          ./kernelsu
+          cd ..
+          
+          echo "### STEP 5: Identifying Final Patched Image ###"
+          FINAL_IMAGE=$(ls -t kernelsu_patched_*.img | head -n 1)
+          if [ -z "$FINAL_IMAGE" ]; then
+            echo "::error::Final KernelSU patched image not found!"
             ls -R
             exit 1
           fi
+          echo "Final image identified as: $FINAL_IMAGE"
           echo "final_image_name=$FINAL_IMAGE" >> $GITHUB_OUTPUT
 
-      - name: Upload Final Boot Image to Gofile
+      - name: Upload Final Image to Gofile
         run: |
-          FILE_PATH="${{ steps.set_path.outputs.final_image_name }}"
+          FILE_PATH="${{ steps.build_chain.outputs.final_image_name }}"
           
           RESPONSE=$(curl -F "file=@${FILE_PATH}" \
                           -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" \
