@@ -1,4 +1,4 @@
-name: Test Repack (Based on Your Script's Logic)
+name: Test Repack (No CD - Final Attempt)
 
 on:
   workflow_dispatch:
@@ -23,52 +23,59 @@ jobs:
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Patch and Repack (Following YOUR repack.sh logic)
+      - name: Patch and Repack (NO CD - ABSOLUTE PATHS ONLY)
         id: patch_step
         run: |
-          echo "--- Starting Test: Following your repack.sh logic ---"
-          # Define absolute paths to avoid any 'cd' related errors
+          echo "--- Starting Test: Using Absolute Paths Only ---"
+          # Define all paths absolutely from the start
           ROOT=$GITHUB_WORKSPACE
           MAGISKBOOT=$ROOT/scripts/bin/magiskboot
           AVBTOOL=$ROOT/scripts/bin/avb/avbtool.py
           BOOT_LZ4=$ROOT/boot.img.lz4
           BOOT_IMG=$ROOT/boot.img
-          WORKSPACE=$ROOT/scripts/bin/workspace # Your script uses this specific path for the workspace
+          WORKSPACE=$ROOT/workspace # A temporary workspace in the root
           CERTDIR=$ROOT/scripts/bin/certs
           
-          # 1. Prepare environment (from your script)
+          # 1. Prepare environment
           mkdir -p $WORKSPACE
           rm -rf $WORKSPACE/*
           mkdir -p $CERTDIR
           lz4 -d $BOOT_LZ4 $BOOT_IMG
 
-          # 2. Unpack boot.img into workspace (from your script)
-          # Your script changes to workspace, so we will do the same to replicate it exactly
-          cd $WORKSPACE
-          $MAGISKBOOT unpack -h ../../$BOOT_IMG
+          # 2. Unpack boot.img and place components directly into workspace
+          $MAGISKBOOT unpack -h $BOOT_IMG
+          # Move the unpacked files into the workspace
+          mv kernel kernel_dtb ramdisk.cpio second dtb extra recovery_dtbo header $WORKSPACE/ 2>/dev/null || true
           
-          # 3. Patch the ramdisk.cpio that is now inside the workspace
+          # 3. Patch ramdisk.cpio in-place inside the workspace
           echo "Patching ramdisk.cpio in-place..."
-          mkdir -p temp_rc_files
-          # Use magiskboot to find, extract, patch, and re-add the rc files
-          $MAGISKBOOT cpio ramdisk.cpio "ls" | grep "\.rc$" | while read -r rcfile; do
+          RAMDISK_CPIO=$WORKSPACE/ramdisk.cpio
+          TEMP_PATCH_DIR=$WORKSPACE/temp_rc_files
+          mkdir -p $TEMP_PATCH_DIR
+
+          # Find all .rc files inside the cpio and process them
+          $MAGISKBOOT cpio $RAMDISK_CPIO "ls" | grep "\.rc$" | while read -r rcfile; do
             echo "Patching file: $rcfile"
-            $MAGISKBOOT cpio ramdisk.cpio "extract $rcfile temp_rc_files/$rcfile"
-            sed -i 's/setenforce 1/setenforce 0/g' "temp_rc_files/$rcfile"
-            PERMS=$($MAGISKBOOT cpio ramdisk.cpio "ls" | grep "$rcfile" | awk '{print $1}')
-            $MAGISKBOOT cpio ramdisk.cpio "add $PERMS $rcfile temp_rc_files/$rcfile"
+            # Extract the single file
+            $MAGISKBOOT cpio $RAMDISK_CPIO "extract $rcfile $TEMP_PATCH_DIR/$rcfile"
+            # Patch it
+            sed -i 's/setenforce 1/setenforce 0/g' "$TEMP_PATCH_DIR/$rcfile"
+            # Get original permissions
+            PERMS=$($MAGISKBOOT cpio $RAMDISK_CPIO "ls" | grep -w "$rcfile" | awk '{print $1}')
+            # Add it back, overwriting the original
+            $MAGISKBOOT cpio $RAMDISK_CPIO "add $PERMS $rcfile $TEMP_PATCH_DIR/$rcfile"
           done
-          rm -rf temp_rc_files
+          rm -rf $TEMP_PATCH_DIR
           echo "Ramdisk patched successfully."
-          
-          # 4. Repack the boot image (from your script)
+
+          # 4. Repack the boot image
           echo "Repacking boot image..."
-          # Your script uses the original boot.img as a template.
-          # We are inside WORKSPACE, so the path is ../../boot.img
-          # The kernel file is already in the workspace from the unpack step.
-          $MAGISKBOOT repack ../../$BOOT_IMG new-boot.img
+          # Use absolute path for the template, and output to the workspace
+          # Crucially, magiskboot needs to be run from the directory containing the components
+          cd $WORKSPACE
+          $MAGISKBOOT repack $BOOT_IMG new-boot.img
           
-          # 5. Sign the new boot image (from your script)
+          # 5. Sign the new boot image
           echo "Signing new boot image..."
           if [ ! -f "$CERTDIR/sign.pk8" ]; then
             openssl genrsa -out $CERTDIR/sign.pk8 4096
@@ -90,7 +97,5 @@ jobs:
           fi
           
           # Cleanup
-          cd .. # Go back to scripts/bin
-          cd .. # Go back to scripts
-          cd .. # Go back to root
+          cd ..
           rm -rf $WORKSPACE $BOOT_IMG
