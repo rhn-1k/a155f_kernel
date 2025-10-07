@@ -1,10 +1,10 @@
-name: Test Ramdisk Patching (Based on Your Code)
+name: Test Repack (Based on Your Script)
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-patch:
+  test-repack:
     runs-on: ubuntu-22.04
 
     steps:
@@ -20,93 +20,64 @@ jobs:
 
       - name: Set Scripts Executable
         run: |
-          # We don't need magiskboot for this test, only for the final build
+          chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/avb/avbtool.py
-          # The most important tool, based on your build script
-          chmod +x kernel-5.10/build/build.sh
-          # Assuming mkbootimg.py and mkbootfs are available through your scripts/repo
-          # If not, we need to add them. For now, let's assume they are.
-          # Let's find them to be sure
-          find . -name "mkbootimg.py" -exec chmod +x {} +
-          find . -name "mkbootfs" -exec chmod +x {} +
 
-
-      - name: Patch Ramdisk and Rebuild boot.img (The Correct Way)
+      - name: Patch and Repack (Following YOUR repack.sh logic)
         id: patch_step
         run: |
-          echo "--- Starting Ramdisk Patch Test (Based on YOUR build scripts) ---"
+          echo "--- Starting Test: Following your repack.sh logic ---"
+          MAGISKBOOT=./scripts/bin/magiskboot
+          AVBTOOL=./scripts/bin/avb/avbtool.py
           BOOT_LZ4=./boot.img.lz4
-          BOOT_IMG_TEMP=./boot_temp.img
-          MKBOOTIMG_STAGING_DIR=./mkbootimg_staging
-          MKBOOTIMG_RAMDISK_STAGING_DIR="${MKBOOTIMG_STAGING_DIR}/ramdisk_root"
+          BOOT_IMG=./boot.img
+          WORKSPACE=./workspace
           
-          if [ ! -f "$BOOT_LZ4" ]; then
-            echo "::error:: Base boot.img.lz4 not found!"
-            exit 1
-          fi
+          # 1. Prepare environment (from your script)
+          mkdir -p $WORKSPACE
+          rm -rf $WORKSPACE/*
+          lz4 -d $BOOT_LZ4 $BOOT_IMG
 
-          # 1. Decompress the original boot.img to get the vendor ramdisk
-          # Your script treats the whole boot.img as a vendor ramdisk source.
-          lz4 -d $BOOT_LZ4 $BOOT_IMG_TEMP
+          # 2. Unpack boot.img into workspace (from your script)
+          cd $WORKSPACE
+          $MAGISKBOOT unpack -h "${PARENTDIR:-..}/$BOOT_IMG"
           
-          # 2. Extract the ramdisk from the temp boot.img
-          # We need to find the ramdisk inside. Let's use a simple method.
-          # This assumes the ramdisk is a cpio archive inside.
-          # A better way is to use magiskboot JUST for unpacking.
-          chmod +x ./scripts/bin/magiskboot
-          ./scripts/bin/magiskboot unpack $BOOT_IMG_TEMP
-
-          # 3. Create staging directory and extract the ramdisk content there
-          mkdir -p "${MKBOOTIMG_RAMDISK_STAGING_DIR}"
-          (cd "${MKBOOTIMG_RAMDISK_STAGING_DIR}" && cpio -idu --quiet < ../ramdisk.cpio)
-
-          # 4. Patch the .rc files inside the staging directory
-          echo "Forcing permissive state in all .rc files..."
-          find "${MKBOOTIMG_RAMDISK_STAGING_DIR}" -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
-
-          # 5. Rebuild the ramdisk cpio using mkbootfs (as your script does)
-          echo "Rebuilding ramdisk.cpio using mkbootfs..."
-          # Find mkbootfs, default to a common location if not found in PATH
-          MKBOOTFS=$(find . -name "mkbootfs" | head -n 1)
-          if [ -z "$MKBOOTFS" ]; then
-              echo "::error:: mkbootfs not found!"
-              exit 1
-          fi
-          $MKBOOTFS "${MKBOOTIMG_RAMDISK_STAGING_DIR}" > "${MKBOOTIMG_STAGING_DIR}/ramdisk.cpio"
-
-          # 6. Rebuild the boot.img using mkbootimg.py (as your script does)
-          echo "Rebuilding boot.img using mkbootimg.py..."
-          MKBOOTIMG_PY=$(find . -name "mkbootimg.py" | head -n 1)
-          if [ -z "$MKBOOTIMG_PY" ]; then
-              echo "::error:: mkbootimg.py not found!"
-              exit 1
-          fi
+          # 3. <<< THIS IS OUR PATCHING STEP >>>
+          echo "Patching ramdisk.cpio..."
+          mkdir ramdisk_work
+          # Use subshell to avoid cd back and forth
+          (cd ramdisk_work && ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract)
+          find ramdisk_work -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
+          # Use standard cpio to reliably rebuild the ramdisk
+          (cd ramdisk_work && find . | cpio -o -H newc > ../ramdisk_new.cpio)
+          mv ramdisk_new.cpio ramdisk.cpio
+          rm -rf ramdisk_work
+          echo "Ramdisk patched successfully."
           
-          # We need to get the original header info. Let's reuse the unpacked components.
-          python3 $MKBOOTIMG_PY \
-            --header_version 4 \
-            --kernel kernel \
-            --ramdisk "${MKBOOTIMG_STAGING_DIR}/ramdisk.cpio" \
-            --os_version 12.0.0 \
-            --os_patch_level 2025-08 \
-            --output new-boot.img
-
-          # 7. Sign the new image with avbtool (as your script does)
-          echo "Signing new-boot.img with avbtool..."
-          AVBTOOL=$(find . -name "avbtool.py" | head -n 1)
-          # This uses a standard dev key. Your script might use a different one.
-          # For the test, we just need to add the footer.
-          python3 $AVBTOOL add_hash_footer \
-            --image new-boot.img \
+          # 4. Repack the boot image (from your script)
+          # We need the original kernel from unpack, so we don't delete it
+          echo "Repacking boot image..."
+          $MAGISKBOOT repack "${PARENTDIR:-..}/$BOOT_IMG" new-boot.img
+          
+          # 5. Sign the new boot image (from your script)
+          echo "Signing new boot image..."
+          # Note: This assumes a fixed partition size for the test. Your script uses a fixed value too.
+          python3 "${PARENTDIR:-..}/$AVBTOOL" add_hash_footer \
             --partition_name boot \
-            --partition_size $(wc -c < new-boot.img)
-
+            --partition_size 67108864 \
+            --image new-boot.img \
+            --algorithm SHA256_RSA4096 \
+            --key "${PARENTDIR:-..}/scripts/bin/certs/sign.pk8"
+          
+          # 6. Verify success
           if [ -f "new-boot.img" ]; then
             echo "✅ SUCCESS: 'new-boot.img' was created and signed, following your script's logic."
           else
-            echo "::error:: Final boot.img was not created."
+            echo "::error:: Repack failed. 'new-boot.img' was not created."
             exit 1
           fi
           
+          cd ..
           # Clean up
-          rm -rf mkbootimg_staging ramdisk.cpio kernel header $BOOT_IMG_TEMP
+          rm -rf $WORKSPACE $BOOT_IMG
+
