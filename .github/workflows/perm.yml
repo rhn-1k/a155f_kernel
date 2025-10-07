@@ -1,4 +1,4 @@
-name: Build A155F Permissive Kernel with KernelSU NEXT
+name: Build A155F Kernel with KernelSU NEXT
 
 on:
   workflow_dispatch:
@@ -60,8 +60,9 @@ jobs:
             local config_key=$1
             local config_value=$2
             # If key is found (starts with CONFIG_ or # CONFIG_), replace the line.
+            # Using '#' as a delimiter in sed to avoid conflicts with '/' in paths.
             if grep -q -E "^(${config_key}|# ${config_key})" "$DEFCONFIG_PATH"; then
-              sed -i -E "s|^(${config_key}|# ${config_key}).*|${config_value}|" "$DEFCONFIG_PATH"
+              sed -i -E "s#^(${config_key}|# ${config_key}).*#${config_value}#" "$DEFCONFIG_PATH"
             else
               # If not found, append it to the file.
               echo "${config_value}" >> "$DEFCONFIG_PATH"
