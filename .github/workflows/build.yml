@@ -1,4 +1,4 @@
-name: Build and Upload A155F Kernel
+name: Build A155F Kernel Merged with KernelSU Next
 
 on:
   workflow_dispatch:
@@ -28,17 +28,15 @@ jobs:
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository ppa:deadsnakes/ppa -y
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4
           sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
 
       - name: Download and Extract Toolchain
         run: |
-          echo "Downloading toolchain from ${{ github.event.inputs.TOOLCHAIN_URL }}"
           curl -LO "${{ github.event.inputs.TOOLCHAIN_URL }}"
           FILE_NAME=$(basename "${{ github.event.inputs.TOOLCHAIN_URL }}")
           tar -xf "$FILE_NAME"
           rm "$FILE_NAME"
-          echo "Toolchain is ready."
 
       - name: Apply Custom Recovery Reboot Patch
         run: |
@@ -46,43 +44,45 @@ jobs:
 
       - name: Set Scripts Executable
         run: |
-          chmod +x kernel-5.10/scripts/config
           chmod +x build_kernel.sh
-
-      - name: Patch Defconfig
-        run: |
-          ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-val UH n --set-val RKP n --set-val KDP n --set-val SECURITY_DEFEX n --set-val INTEGRITY n --set-val FIVE n --set-val TRIM_UNUSED_KSYMS n --set-val PROCA n --set-val PROCA_GKI_10 n --set-val PROCA_S_OS n --set-val PROCA_CERTIFICATES_XATTR n --set-val PROCA_CERT_ENG n --set-val PROCA_CERT_USER n --set-val GAF_V6 n --set-val FIVE_CERT_USER n --set-val FIVE_DEFAULT_HASH n --set-val UH_RKP n --set-val UH_LKMAUTH n --set-val UH_LKM_BLOCK n --set-val RKP_CFP_JOPP n --set-val RKP_CFP n --set-val KDP_CRED n --set-val KDP_NS n --set-val KDP_TEST n --set-val RKP_CRED n
-          ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-val TMPFS_XATTR y --set-val TMPFS_POSIX_ACL y --set-val IP_NF_TARGET_TTL y --set-val IP6_NF_TARGET_HL y --set-val IP6_NF_MATCH_HL y --set-val TCP_CONG_ADVANCED y --set-val TCP_CONG_BBR y --set-val NET_SCH_FQ y --set-val TCP_CONG_BIC n --set-val TCP_CONG_WESTWOOD n --set-val TCP_CONG_HTCP n --set-val DEFAULT_BBR y --set-val DEFAULT_BIC n --set-str DEFAULT_TCP_CONG "bbr" --set-val DEFAULT_RENO n --set-val DEFAULT_CUBIC n --set-val KSU y
-
-      - name: Set Kernel Local Version
-        run: |
-          echo "CONFIG_LOCALVERSION_AUTO=n" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
-          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.DEVELOPER_NAME }}\"" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
+          chmod +x clean_build.sh
+          chmod +x kernel-5.10/scripts/config
+          chmod +x scripts/repack
+          chmod +x scripts/bin/magiskboot
+          chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
+          chmod +x scripts/bin/avb/avbtool.py
 
       - name: Build The Kernel
         run: |
+          echo "CONFIG_LOCALVERSION_AUTO=n" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
+          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.DEVELOPER_NAME }}\"" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
           ./build_kernel.sh
 
-      - name: Prepare Artifacts for Upload
-        id: prepare_artifacts
+      - name: Repack The Boot Image
+        working-directory: ./scripts
         run: |
-          mkdir -p upload_dir
-          cp out/target/product/a15/obj/KERNEL_OBJ/arch/arm64/boot/Image.gz upload_dir/
-          find out/target/product/a15/obj/KERNEL_OBJ/ -maxdepth 1 -name "*.ko" -exec cp {} upload_dir/ \;
-          cd upload_dir
-          zip -r9 ../A155F-Kernel-${{ github.event.inputs.DEVELOPER_NAME }}.zip .
-          cd ..
-          echo "zip_name=A155F-Kernel-${{ github.event.inputs.DEVELOPER_NAME }}.zip" >> $GITHUB_OUTPUT
+          ./repack
 
-      - name: Upload Kernel to Gofile
+      - name: Prepare Artifact for Upload
+        id: prepare_artifact
         run: |
-          FILE_PATH="${{ steps.prepare_artifacts.outputs.zip_name }}"
+          FINAL_IMAGE="boot-repacked-signed.img"
+          if [ ! -f "$FINAL_IMAGE" ]; then
+            echo "::error::Final image $FINAL_IMAGE not found in root directory!"
+            ls -R
+            exit 1
+          fi
+          NEW_NAME="A155F-boot-${{ github.event.inputs.DEVELOPER_NAME }}.img"
+          mv "$FINAL_IMAGE" "$NEW_NAME"
+          echo "final_image_name=$NEW_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload Final Boot Image to Gofile
+        run: |
+          FILE_PATH="${{ steps.prepare_artifact.outputs.final_image_name }}"
           
           RESPONSE=$(curl -F "file=@${FILE_PATH}" \
                           -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" \
                           https://upload.gofile.io/uploadFile)
-          
-          echo "Gofile API Response: $RESPONSE"
           
           DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
           
