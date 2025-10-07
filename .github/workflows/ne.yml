@@ -1,10 +1,10 @@
-name: Test Repack (Final Path Correction)
+name: Test Find and Patch RC Files
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-repack:
+  test-find-and-patch:
     runs-on: ubuntu-22.04
 
     steps:
@@ -13,78 +13,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Dependencies
+      - name: Find and Patch setenforce 1
         run: |
-          sudo apt-get update
-          sudo apt-get install -y lz4 python3 openssl
-
-      - name: Set Scripts Executable
-        run: |
-          chmod +x scripts/bin/magiskboot
-          chmod +x scripts/bin/avb/avbtool.py
-
-      - name: Patch and Repack (Final Path Correction)
-        id: patch_step
-        run: |
-          echo "--- Starting Test: Final Path Correction ---"
-          MAGISKBOOT=$GITHUB_WORKSPACE/scripts/bin/magiskboot
-          AVBTOOL=$GITHUB_WORKSPACE/scripts/bin/avb/avbtool.py
-          BOOT_LZ4=$GITHUB_WORKSPACE/boot.img.lz4
-          BOOT_IMG=$GITHUB_WORKSPACE/boot.img
-          WORKSPACE=$GITHUB_WORKSPACE/workspace
-          CERTDIR=$GITHUB_WORKSPACE/scripts/bin/certs
+          echo "--- Starting Test: Searching for and patching 'setenforce 1' in source .rc files ---"
           
-          # 1. Prepare environment
-          mkdir -p $WORKSPACE
-          rm -rf $WORKSPACE/*
-          mkdir -p $CERTDIR
-          lz4 -d $BOOT_LZ4 $BOOT_IMG
-
-          # 2. Unpack boot.img and move components to workspace
-          $MAGISKBOOT unpack -h $BOOT_IMG
-          mv kernel kernel_dtb ramdisk.cpio second dtb extra recovery_dtbo header $WORKSPACE/ 2>/dev/null || true
+          # Find all .rc files anywhere in the project that contain "setenforce 1"
+          RC_FILES=$(grep -lr "setenforce 1" --include="*.rc" .)
           
-          # Change to workspace directory
-          cd $WORKSPACE
-
-          # 3. Patch ramdisk.cpio in-place
-          echo "Patching ramdisk.cpio in-place..."
-          mkdir -p temp_rc_files
-          $MAGISKBOOT cpio ramdisk.cpio "ls" | grep "\.rc$" | while read -r rcfile; do
-            $MAGISKBOOT cpio ramdisk.cpio "extract $rcfile temp_rc_files/$rcfile"
-            sed -i 's/setenforce 1/setenforce 0/g' "temp_rc_files/$rcfile"
-            PERMS=$($MAGISKBOOT cpio ramdisk.cpio "ls" | grep "$rcfile" | awk '{print $1}')
-            $MAGISKBOOT cpio ramdisk.cpio "add $PERMS $rcfile temp_rc_files/$rcfile"
-          done
-          rm -rf temp_rc_files
-          echo "Ramdisk patched successfully."
-
-          # 4. Repack the boot image
-          echo "Repacking boot image..."
-          # THIS IS THE FIX: Use an absolute path to the original boot.img template
-          $MAGISKBOOT repack $GITHUB_WORKSPACE/boot.img new-boot.img
-          
-          # 5. Sign the new boot image
-          echo "Signing new boot image..."
-          if [ ! -f "$CERTDIR/sign.pk8" ]; then
-            openssl genrsa -out $CERTDIR/sign.pk8 4096
+          if [ -z "$RC_FILES" ]; then
+            echo "✅ SUCCESS: No .rc files with 'setenforce 1' were found. This means either they don't exist or they are already permissive."
+            exit 0
           fi
           
-          python3 $AVBTOOL add_hash_footer \
-            --partition_name boot \
-            --partition_size 67108864 \
-            --image new-boot.img \
-            --algorithm SHA256_RSA4096 \
-            --key $CERTDIR/sign.pk8
+          echo "Found the following files to patch:"
+          echo "$RC_FILES"
           
-          # 6. Verify success
-          if [ -f "new-boot.img" ]; then
-            echo "✅ SUCCESS: 'new-boot.img' was created and signed."
-          else
-            echo "::error:: Repack failed. 'new-boot.img' was not created."
+          # Use xargs to run sed on all found files
+          echo "$RC_FILES" | xargs -I {} sed -i 's/setenforce 1/setenforce 0/g' {}
+          
+          echo "--- Verifying that the patch was successful ---"
+          # This command will search again. If it finds anything, it means the patch failed.
+          if grep -lr "setenforce 1" --include="*.rc" .; then
+            echo "::error:: PATCH FAILED! 'setenforce 1' is still found in some files."
             exit 1
+          else
+            echo "✅ SUCCESS: All found instances of 'setenforce 1' have been replaced with 'setenforce 0'."
           fi
-          
-          # Cleanup
-          cd ..
-          rm -rf $WORKSPACE $BOOT_IMG
