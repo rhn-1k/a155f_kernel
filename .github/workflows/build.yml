@@ -1,99 +1,64 @@
-name: Build A155F Kernel with KernelSU Merged
+name: Sync Everything From Upstream
 
 on:
   workflow_dispatch:
     inputs:
-      TOOLCHAIN_URL:
-        description: 'URL of the toolchain .tar.gz file'
+      upstream_repo:
+        description: 'The repository to copy from (e.g., user/repo)'
         required: true
-        default: 'https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz'
-        type: string
-      DEVELOPER_NAME:
-        description: 'Your name, to be appended to the kernel version (e.g., rhn-1k)'
+        default: 'nillerusr/source-engine'
+      pat:
+        description: 'A Personal Access Token (PAT) with full "repo" scope'
         required: true
-        default: 'rhn-1k'
-        type: string
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
-
+  sync:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      # الخطوة 1: تحميل المستودع المصدر (الذي تريد النسخ منه)
+      # سيتم وضعه في مجلد باسم "upstream"
+      - name: Clone the upstream repository
         uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.upstream_repo }}
+          path: 'upstream'
 
-      - name: Install Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository ppa:deadsnakes/ppa -y
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4
-          sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
+      # الخطوة 2: تحميل مستودعك الخاص (الذي تريد النسخ إليه)
+      # سيتم وضعه في مجلد باسم "mine"
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+        with:
+          path: 'mine'
+          token: ${{ github.event.inputs.pat }}
 
-      - name: Download and Extract Toolchain
+      # الخطوة 3: عملية النسخ الشاملة
+      # هذه هي الخطوة الأساسية التي تنفذ طلبك
+      - name: Sync all files from upstream to your repo
         run: |
-          curl -LO "${{ github.event.inputs.TOOLCHAIN_URL }}"
-          FILE_NAME=$(basename "${{ github.event.inputs.TOOLCHAIN_URL }}")
-          tar -xf "$FILE_NAME"
-          rm "$FILE_NAME"
+          # هذا الأمر هو مفتاح العملية:
+          # -av: وضع الأرشيف (يحافظ على الصلاحيات والروابط) + وضع مطول (يعرض الملفات المنسوخة).
+          # --delete: يحذف أي ملف موجود في مستودعك (mine) وغير موجود في المصدر (upstream).
+          # upstream/./: المصدر. النقطة الإضافية (./) تضمن نسخ الملفات والمجلدات المخفية (مثل .github, .gitignore).
+          # mine/: الوجهة.
+          # --exclude '.git/': هذا هو الاستثناء الوحيد والمهم. نحن لا نريد نسخ سجل Git الخاص بالمصدر.
+          rsync -av --delete upstream/./ mine/ --exclude '.git/'
 
-      - name: Set Scripts Executable
+      # الخطوة 4: تثبيت (Commit) ودفع (Push) التغييرات إلى مستودعك
+      - name: Commit and push changes
         run: |
-          chmod +x build_kernel.sh
-          chmod +x clean_build.sh
-          chmod +x scripts/config
-          chmod +x scripts/repack
-          chmod +x scripts/kernelsu
-          chmod +x scripts/bin/magiskboot
-          chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
-          chmod +x scripts/bin/avb/avbtool.py
-
-      - name: Execute Full Build Chain
-        id: build_chain
-        run: |
-          set -e
+          cd mine
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions-bot@github.com"
           
-          echo "### STEP 1: Applying Patches and Setting Version ###"
-          sed -i 's/if (!cmd)/if (!cmd)\n\t\tcmd = "recovery";\n\telse if (2 < 1)/' kernel-5.10/drivers/power/reset/reboot-mode.c
-          echo "CONFIG_LOCALVERSION_AUTO=n" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
-          echo "CONFIG_LOCALVERSION=\"-${{ github.event.inputs.DEVELOPER_NAME }}\"" >> kernel-5.10/arch/arm64/configs/a15_00_defconfig
-          
-          echo "### STEP 2: Building The Kernel ###"
-          ./build_kernel.sh
-          
-          echo "### STEP 3: Repacking Boot Image with New Kernel ###"
-          cd scripts
-          ./repack
-          
-          echo "### STEP 4: Injecting KernelSU into Repacked Image ###"
-          ./kernelsu
-          cd ..
-          
-          echo "### STEP 5: Identifying Final Patched Image ###"
-          FINAL_IMAGE=$(ls -t kernelsu_patched_*.img | head -n 1)
-          if [ -z "$FINAL_IMAGE" ]; then
-            echo "::error::Final KernelSU patched image not found!"
-            ls -R
-            exit 1
+          # التحقق مما إذا كانت هناك أي تغييرات (ملفات جديدة، محذوفة، أو معدلة)
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Changes detected. Committing and pushing..."
+            git add .
+            git commit -m "Sync with upstream: ${{ github.event.inputs.upstream_repo }}"
+            
+            # الدفع إلى الفرع الرئيسي (main) في مستودعك
+            git push https://x-access-token:${{ github.event.inputs.pat }}@github.com/${{ github.repository }}.git HEAD:main
+            echo "✅ Repository successfully synced."
+          else
+            echo "✅ No changes to sync. Your repository is already up-to-date."
           fi
-          echo "Final image identified as: $FINAL_IMAGE"
-          echo "final_image_name=$FINAL_IMAGE" >> $GITHUB_OUTPUT
-
-      - name: Upload Final Image to Gofile
-        run: |
-          FILE_PATH="${{ steps.build_chain.outputs.final_image_name }}"
-          
-          RESPONSE=$(curl -F "file=@${FILE_PATH}" \
-                          -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" \
-                          https://upload.gofile.io/uploadFile)
-          
-          DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
-          
-          if [ -z "$DOWNLOAD_PAGE" ]; then
-            echo "Error: Could not extract download page URL from Gofile response."
-            exit 1
-          fi
-          
-          echo "File uploaded successfully!"
-          echo "Download Link: $DOWNLOAD_PAGE"
