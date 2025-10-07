@@ -1,0 +1,80 @@
+name: Test Ramdisk Patching Only
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-patch:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lz4
+
+      - name: Set Scripts Executable
+        run: |
+          chmod +x scripts/bin/magiskboot
+
+      - name: Patch Ramdisk in boot.img.lz4
+        id: patch_step
+        run: |
+          echo "--- Starting Ramdisk Patch Test ---"
+          MAGISKBOOT=./scripts/bin/magiskboot
+          BOOT_LZ4=./boot.img.lz4
+          BOOT_IMG_TEMP=./boot_temp.img
+
+          # Check if the base file exists
+          if [ ! -f "$BOOT_LZ4" ]; then
+            echo "::error:: Base boot.img.lz4 not found!"
+            exit 1
+          fi
+
+          # Unpack the original boot image to get the ramdisk
+          lz4 -d $BOOT_LZ4 $BOOT_IMG_TEMP
+          $MAGISKBOOT unpack $BOOT_IMG_TEMP
+          
+          # Create a temporary directory for our patched files
+          mkdir -p ramdisk_patch_dir
+          
+          # --- The Core Logic ---
+          # List all files in the ramdisk, find the .rc files, and process them one by one
+          echo "Listing all files in ramdisk and finding .rc files to patch..."
+          $MAGISKBOOT cpio ramdisk.cpio "ls -a" | grep "\.rc$" | while read -r line; do
+            # Extract permissions and file path from the line
+            PERMS=$(echo $line | awk '{print $1}')
+            FILEPATH=$(echo $line | awk '{print $2}')
+            
+            echo "Patching: $FILEPATH with permissions $PERMS"
+            
+            # Create the directory structure in our patch folder
+            mkdir -p "ramdisk_patch_dir/$(dirname "$FILEPATH")"
+            
+            # Extract the specific .rc file
+            $MAGISKBOOT cpio ramdisk.cpio "extract $FILEPATH ramdisk_patch_dir/$FILEPATH"
+            
+            # Modify the extracted file
+            sed -i 's/setenforce 1/setenforce 0/g' "ramdisk_patch_dir/$FILEPATH"
+            
+            # Add the modified file back into the cpio archive, overwriting the original
+            $MAGISKBOOT cpio ramdisk.cpio "add $PERMS $FILEPATH ramdisk_patch_dir/$FILEPATH"
+          done
+          
+          echo "--- Patching process seems complete. Repacking boot.img ---"
+          
+          # Repack the boot image with the (now modified) ramdisk.cpio
+          $MAGISKBOOT repack $BOOT_IMG_TEMP
+          
+          echo "--- Repack successful. Cleaning up. ---"
+          
+          # Clean up temporary files
+          rm -rf ramdisk_patch_dir ramdisk.cpio stock_boot.img $BOOT_IMG_TEMP
+          
+          echo "✅ SUCCESS: The patching process completed without errors."
+
