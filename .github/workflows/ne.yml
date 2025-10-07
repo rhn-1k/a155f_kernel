@@ -1,10 +1,10 @@
-name: Test VBMETA Repacking (Final Method)
+name: Find and Patch RC Files
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-vbmeta-repack:
+  find-and-patch:
     runs-on: ubuntu-22.04
 
     steps:
@@ -13,52 +13,44 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Dependencies
+      - name: Find and Patch setenforce 1
         run: |
-          sudo apt-get update
-          sudo apt-get install -y lz4 python3
-
-      - name: Set Scripts Executable
-        run: |
-          chmod +x scripts/bin/magiskboot
-          chmod +x scripts/bin/avb/avbtool.py
-
-      - name: Patch and Repack (Correct AVB Method)
-        id: patch_step
-        run: |
-          echo "--- Starting Ramdisk Patch Test (Correct AVB Method) ---"
-          MAGISKBOOT=./scripts/bin/magiskboot
-          AVBTOOL=./scripts/bin/avb/avbtool.py
-          BOOT_LZ4=./boot.img.lz4
-          BOOT_IMG_TEMP=./boot_temp.img
-
-          if [ ! -f "$BOOT_LZ4" ]; then
-            echo "::error:: Base boot.img.lz4 not found!"
-            exit 1
+          echo "--- Searching for .rc files containing 'setenforce 1' ---"
+          
+          # Find all .rc files, show which ones contain the string, then patch them
+          RC_FILES=$(grep -lr "setenforce 1" --include="*.rc" .)
+          
+          if [ -z "$RC_FILES" ]; then
+            echo "✅ No .rc files with 'setenforce 1' found. Nothing to patch."
+            exit 0
           fi
+          
+          echo "Found the following files to patch:"
+          echo "$RC_FILES"
+          
+          # Use xargs to run sed on all found files
+          echo "$RC_FILES" | xargs -I {} sed -i 's/setenforce 1/setenforce 0/g' {}
+          
+          echo "--- Verifying patches ---"
+          # This will fail if any file still contains 'setenforce 1'
+          if grep -lr "setenforce 1" --include="*.rc" .; then
+            echo "::error:: Patching failed! 'setenforce 1' still found in some files."
+            exit 1
+          else
+            echo "✅ SUCCESS: All instances of 'setenforce 1' have been replaced with 'setenforce 0'."
+          fi
+          
+          echo "IMPORTANT: You must now commit these changes to your repository!"
 
-          # 1. Unpack the original boot image
-          lz4 -d $BOOT_LZ4 $BOOT_IMG_TEMP
-          $MAGISKBOOT unpack $BOOT_IMG_TEMP
-          
-          # 2. Patch the ramdisk
-          mkdir ramdisk_patch_dir
-          (cd ramdisk_patch_dir && ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract)
-          find ramdisk_patch_dir -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
-          (cd ramdisk_patch_dir && find . | cpio -o -H newc > ../ramdisk_new.cpio)
-          mv ramdisk_new.cpio ramdisk.cpio
-          
-          # 3. Rebuild the boot image from components, DO NOT USE REPACK
-          # This avoids the VBMETA signature check issue within repack
-          echo "Rebuilding boot image from components..."
-          $MAGISKBOOT pack -h header -k kernel -r ramdisk.cpio new-boot.img
-          
-          # 4. Add the AVB hash footer to the newly created image
-          echo "Adding AVB hash footer..."
-          $AVBTOOL add_hash_footer --image new-boot.img --partition_name boot --partition_size $(wc -c < new-boot.img)
-          
-          echo "✅ SUCCESS: 'new-boot.img' was created and signed with a dev footer."
-          
-          # Clean up
-          rm -rf ramdisk_patch_dir ramdisk.cpio stock_boot.img header kernel $BOOT_IMG_TEMP
+      - name: Create Pull Request with Patched Files
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Automated patch: Force permissive in ramdisk RC files"
+          title: "Automated Patch: Force Permissive"
+          body: |
+            This PR was automatically created by a GitHub Action.
+            It finds all instances of `setenforce 1` in `.rc` files and replaces them with `setenforce 0` to ensure a permissive build.
+          branch: "automated-permissive-patch"
+          delete-branch: true
 
