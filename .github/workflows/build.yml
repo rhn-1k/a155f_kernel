@@ -1,4 +1,4 @@
-name: Build A155F Kernel Merged with KernelSU Next
+name: Build A155F Kernel
 
 on:
   workflow_dispatch:
@@ -63,8 +63,8 @@ jobs:
         run: |
           ./repack
 
-      - name: Prepare Artifact for Upload
-        id: prepare_artifact
+      - name: Set Final Image Path
+        id: set_path
         run: |
           FINAL_IMAGE="boot-repacked-signed.img"
           if [ ! -f "$FINAL_IMAGE" ]; then
@@ -72,13 +72,11 @@ jobs:
             ls -R
             exit 1
           fi
-          NEW_NAME="A155F-boot-${{ github.event.inputs.DEVELOPER_NAME }}.img"
-          mv "$FINAL_IMAGE" "$NEW_NAME"
-          echo "final_image_name=$NEW_NAME" >> $GITHUB_OUTPUT
+          echo "final_image_name=$FINAL_IMAGE" >> $GITHUB_OUTPUT
 
       - name: Upload Final Boot Image to Gofile
         run: |
-          FILE_PATH="${{ steps.prepare_artifact.outputs.final_image_name }}"
+          FILE_PATH="${{ steps.set_path.outputs.final_image_name }}"
           
           RESPONSE=$(curl -F "file=@${FILE_PATH}" \
                           -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" \
