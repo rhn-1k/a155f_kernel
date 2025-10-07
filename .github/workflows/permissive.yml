@@ -1,4 +1,4 @@
-name: Build and Patch Kernel (Permissive) with KernelSU NEXT
+name: Build A155F Permissive Kernel with KernelSU NEXT
 
 on:
   workflow_dispatch:
@@ -40,15 +40,6 @@ jobs:
           tar -xf "$FILE_NAME"
           rm "$FILE_NAME"
 
-      - name: Modify Kernel Config for Permissive Build
-        run: |
-          CONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_defconfig"
-          echo "--- Modifying a15_defconfig for Permissive kernel build ---"
-          sed -i 's/\(CONFIG_CMDLINE=".*\)"/\1 androidboot.selinux=permissive"/' $CONFIG_FILE
-          sed -i 's/CONFIG_INTEGRITY=y/CONFIG_INTEGRITY=n/' $CONFIG_FILE
-          sed -i 's/CONFIG_INTEGRITY_AUDIT=y/CONFIG_INTEGRITY_AUDIT=n/' $CONFIG_FILE
-          echo "--- a15_defconfig modification complete. ---"
-
       - name: Set Scripts Executable
         run: |
           chmod +x build_kernel.sh
@@ -59,60 +50,30 @@ jobs:
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
 
+      - name: Make Kernel Permissive
+        run: |
+          CONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
+          
+          sed -i 's/\(CONFIG_CMDLINE=".*\)"/\1 androidboot.selinux=permissive"/' $CONFIG_FILE
+          
+          cat <<'EOF' >> $CONFIG_FILE
+CONFIG_SECURITY_SELINUX_DEVELOP=y
+CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=y
+# CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE is not set
+EOF
+          
+          sed -i 's/CONFIG_INTEGRITY=y/# CONFIG_INTEGRITY is not set/' $CONFIG_FILE
+          sed -i 's/CONFIG_INTEGRITY_AUDIT=y/# CONFIG_INTEGRITY_AUDIT is not set/' $CONFIG_FILE
+
       - name: Build and Package
         id: build_chain
         run: |
-          # Step 1: Build the new kernel Image file
-          echo "--- Building Kernel Image ---"
           sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
           ./build_kernel.sh
-
-          # Step 2: Patch the base boot.img.lz4 to make its ramdisk permissive
-          echo "--- Patching base boot.img.lz4 ramdisk to prevent enforcing ---"
-          MAGISKBOOT=./scripts/bin/magiskboot
-          BOOT_LZ4=./boot.img.lz4
-          BOOT_IMG_TEMP=./boot_temp.img
-
-          if [ ! -f "$BOOT_LZ4" ]; then
-            echo "::error:: Base boot.img.lz4 not found!"
-            exit 1
-          fi
-
-          lz4 -d $BOOT_LZ4 $BOOT_IMG_TEMP
-          $MAGISKBOOT unpack $BOOT_IMG_TEMP
-          
-          mkdir ramdisk_patch_dir
-          cd ramdisk_patch_dir
-          
-          ../scripts/bin/magiskboot cpio ../ramdisk.cpio extract
-          
-          echo "Forcing permissive state in all .rc files..."
-          find . -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
-          
-          cd ..
-          
-          # The CORRECT and SIMPLE way to repack the cpio
-          echo "Repacking modified ramdisk..."
-          $MAGISKBOOT cpio ramdisk.cpio pack ramdisk_patch_dir
-          
-          # Repack the final boot.img with the new ramdisk
-          $MAGISKBOOT repack $BOOT_IMG_TEMP
-          
-          # Overwrite the original boot.img.lz4 with the patched version
-          lz4 -f $BOOT_IMG_TEMP $BOOT_LZ4
-          
-          # Clean up all temporary files
-          rm -rf ramdisk_patch_dir ramdisk.cpio stock_boot.img $BOOT_IMG_TEMP
-          echo "--- Base boot.img.lz4 is now patched. ---"
-
-          # Step 3: Run the final repack script
-          echo "--- Running final repack script ---"
           ./scripts/repack
-          
-          # Step 4: Find the final tarball for upload
           FINAL_TAR=$(ls -t *.tar | head -n 1)
           if [ -z "$FINAL_TAR" ]; then
-            echo "::error::Final .tar file not found after repack!"
+            echo "::error::Final .tar file not found!"
             ls -R
             exit 1
           fi
