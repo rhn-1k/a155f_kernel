@@ -1,4 +1,4 @@
-name: Test Repack (XDA Proven Method)
+name: Test Repack (Final Path Correction)
 
 on:
   workflow_dispatch:
@@ -23,11 +23,10 @@ jobs:
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Patch and Repack (XDA Proven Method)
+      - name: Patch and Repack (Final Path Correction)
         id: patch_step
         run: |
-          echo "--- Starting Test: Following XDA Proven Method ---"
-          # Use absolute paths to be safe
+          echo "--- Starting Test: Final Path Correction ---"
           MAGISKBOOT=$GITHUB_WORKSPACE/scripts/bin/magiskboot
           AVBTOOL=$GITHUB_WORKSPACE/scripts/bin/avb/avbtool.py
           BOOT_LZ4=$GITHUB_WORKSPACE/boot.img.lz4
@@ -48,28 +47,22 @@ jobs:
           # Change to workspace directory
           cd $WORKSPACE
 
-          # 3. Patch ramdisk.cpio IN-PLACE (The XDA Method)
+          # 3. Patch ramdisk.cpio in-place
           echo "Patching ramdisk.cpio in-place..."
           mkdir -p temp_rc_files
-
-          # Find all .rc files inside the cpio and process them
           $MAGISKBOOT cpio ramdisk.cpio "ls" | grep "\.rc$" | while read -r rcfile; do
-            echo "Patching file: $rcfile"
-            # Extract the single file
             $MAGISKBOOT cpio ramdisk.cpio "extract $rcfile temp_rc_files/$rcfile"
-            # Patch it
             sed -i 's/setenforce 1/setenforce 0/g' "temp_rc_files/$rcfile"
-            # Get original permissions
             PERMS=$($MAGISKBOOT cpio ramdisk.cpio "ls" | grep "$rcfile" | awk '{print $1}')
-            # Add it back, overwriting the original
             $MAGISKBOOT cpio ramdisk.cpio "add $PERMS $rcfile temp_rc_files/$rcfile"
           done
           rm -rf temp_rc_files
           echo "Ramdisk patched successfully."
 
-          # 4. Repack the boot image using the original as a template
+          # 4. Repack the boot image
           echo "Repacking boot image..."
-          $MAGISKBOOT repack ../$BOOT_IMG new-boot.img
+          # THIS IS THE FIX: Use an absolute path to the original boot.img template
+          $MAGISKBOOT repack $GITHUB_WORKSPACE/boot.img new-boot.img
           
           # 5. Sign the new boot image
           echo "Signing new boot image..."
@@ -86,7 +79,7 @@ jobs:
           
           # 6. Verify success
           if [ -f "new-boot.img" ]; then
-            echo "✅ SUCCESS: 'new-boot.img' was created and signed using the XDA method."
+            echo "✅ SUCCESS: 'new-boot.img' was created and signed."
           else
             echo "::error:: Repack failed. 'new-boot.img' was not created."
             exit 1
