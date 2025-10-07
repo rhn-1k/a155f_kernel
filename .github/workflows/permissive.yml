@@ -1,4 +1,4 @@
-name: Build A155F Kernel (Permissive) with KernelSU NEXT
+name: Build and Patch Kernel (Permissive) with KernelSU NEXT
 
 on:
   workflow_dispatch:
@@ -44,19 +44,12 @@ jobs:
         run: |
           CONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_defconfig"
           echo "--- Modifying a15_defconfig for Permissive build ---"
-          
-          # Append the permissive flag to the existing CONFIG_CMDLINE
           sed -i 's/\(CONFIG_CMDLINE=".*\)"/\1 androidboot.selinux=permissive"/' $CONFIG_FILE
           echo "Appended permissive flag to CONFIG_CMDLINE."
-
-          # Disable integrity checks
           sed -i 's/CONFIG_INTEGRITY=y/CONFIG_INTEGRITY=n/' $CONFIG_FILE
           sed -i 's/CONFIG_INTEGRITY_AUDIT=y/CONFIG_INTEGRITY_AUDIT=n/' $CONFIG_FILE
-          echo "Disabled integrity checks."
-          
+          echo "Changed integrity checks to 'n'."
           echo "--- a15_defconfig modification complete. ---"
-          echo "Verifying final CONFIG_CMDLINE:"
-          grep "CONFIG_CMDLINE" $CONFIG_FILE
 
       - name: Set Scripts Executable
         run: |
@@ -68,11 +61,55 @@ jobs:
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Build and Package
-        id: build_chain
+      - name: Build Kernel
         run: |
           sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
           ./build_kernel.sh
+
+      # --- START: NEW STEP TO PATCH RAMDISK ---
+      - name: Patch Ramdisk to Enforce Permissive
+        run: |
+          echo "--- Starting Ramdisk Patching Process ---"
+          # Define paths for clarity
+          MAGISKBOOT=./scripts/bin/magiskboot
+          BOOT_IMG=./AnyKernel3/boot.img
+          
+          # 1. Unpack the boot.img to get the ramdisk
+          echo "Unpacking boot.img..."
+          $MAGISKBOOT unpack $BOOT_IMG
+          
+          # 2. Decompress the ramdisk to a temporary directory
+          echo "Decompressing ramdisk..."
+          mkdir ramdisk_patch
+          cd ramdisk_patch
+          $MAGISKBOOT cpio ../ramdisk.cpio extract
+          
+          # 3. Find and replace 'setenforce 1' with 'setenforce 0' in all .rc files
+          echo "Searching for and replacing 'setenforce 1' in .rc files..."
+          # Use find to iterate over all .rc files and execute sed on them
+          find . -type f -name "*.rc" -exec sed -i 's/setenforce 1/setenforce 0/g' {} +
+          echo "Patching complete."
+          
+          # 4. Repack the modified ramdisk
+          echo "Repacking ramdisk..."
+          $MAGISKBOOT cpio ../ramdisk.cpio 'add 0750 init init' 'add 0750 init.environ.rc init.environ.rc'
+          $MAGISKBOOT cpio ../ramdisk.cpio 'pack .'
+          
+          # 5. Repack the final boot.img with the patched ramdisk
+          echo "Repacking final boot.img..."
+          cd ..
+          $MAGISKBOOT repack $BOOT_IMG
+          
+          # 6. Clean up temporary files
+          echo "Cleaning up..."
+          rm -rf ramdisk_patch ramdisk.cpio stock_boot.img
+          
+          echo "--- Ramdisk patching finished successfully! ---"
+      # --- END: NEW STEP ---
+
+      - name: Package Final Files
+        id: build_chain
+        run: |
           ./scripts/repack
           FINAL_TAR=$(ls -t *.tar | head -n 1)
           if [ -z "$FINAL_TAR" ]; then
