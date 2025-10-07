@@ -1,4 +1,4 @@
-name: Build A155F Permissive Kernel with KernelSU NEXT
+name: Build A155F Kernel with KernelSU NEXT
 
 on:
   workflow_dispatch:
@@ -30,7 +30,7 @@ jobs:
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository ppa:deadsnakes/ppa -y
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4 patch
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4 patch
           sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
 
       - name: Download and Extract Toolchain
@@ -50,25 +50,42 @@ jobs:
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Make Kernel Permissive
+      - name: Apply Permissive Kernel Patches
         run: |
-          CONFIG_FILE="kernel-5.10/arch/arm64/configs/a15_00_defconfig"
-          
-          sed -i 's/\(CONFIG_CMDLINE=".*\)"/\1 androidboot.selinux=permissive"/' $CONFIG_FILE
-          
-          cat <<'EOF' >> $CONFIG_FILE
-CONFIG_SECURITY_SELINUX_DEVELOP=y
-CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=y
-# CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE is not set
-EOF
-          
-          sed -i 's/CONFIG_INTEGRITY=y/# CONFIG_INTEGRITY is not set/' $CONFIG_FILE
-          sed -i 's/CONFIG_INTEGRITY_AUDIT=y/# CONFIG_INTEGRITY_AUDIT is not set/' $CONFIG_FILE
+          DEFCONFIG_PATH="kernel-5.10/arch/arm64/configs/a15_defconfig"
+          echo "Applying robust permissive patches to $DEFCONFIG_PATH"
+
+          # Helper function to update or add a config setting
+          update_config() {
+            local config_key=$1
+            local config_value=$2
+            # If key is found (starts with CONFIG_ or # CONFIG_), replace the line.
+            if grep -q -E "^(${config_key}|# ${config_key})" "$DEFCONFIG_PATH"; then
+              sed -i -E "s|^(${config_key}|# ${config_key}).*|${config_value}|" "$DEFCONFIG_PATH"
+            else
+              # If not found, append it to the file.
+              echo "${config_value}" >> "$DEFCONFIG_PATH"
+            fi
+          }
+
+          # Apply all required permissive settings
+          update_config "CONFIG_CMDLINE=" 'CONFIG_CMDLINE="androidboot.selinux=permissive"'
+          update_config "CONFIG_CMDLINE_EXTEND=" 'CONFIG_CMDLINE_EXTEND=y'
+          update_config "CONFIG_SECURITY_SELINUX_DEVELOP=" 'CONFIG_SECURITY_SELINUX_DEVELOP=y'
+          update_config "CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE=" '# CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE is not set'
+          update_config "CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=" 'CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=y'
+          update_config "CONFIG_SECURITY_DEFEX=" '# CONFIG_SECURITY_DEFEX is not set'
+          update_config "CONFIG_PROCA=" '# CONFIG_PROCA is not set'
+          update_config "CONFIG_INTEGRITY=" '# CONFIG_INTEGRITY is not set'
+
+          echo "--- Patches applied. Verifying final defconfig content: ---"
+          cat $DEFCONFIG_PATH
+          echo "----------------------------------------------------------"
 
       - name: Build and Package
         id: build_chain
         run: |
-          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
+          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
           ./build_kernel.sh
           ./scripts/repack
           FINAL_TAR=$(ls -t *.tar | head -n 1)
