@@ -53,31 +53,52 @@ jobs:
       - name: Apply Permissive Kernel Patches
         run: |
           DEFCONFIG_PATH="kernel-5.10/arch/arm64/configs/a15_defconfig"
+          TEMP_DEFCONFIG=$(mktemp)
           echo "Applying robust permissive patches to $DEFCONFIG_PATH"
 
-          # Helper function to update or add a config setting
-          update_config() {
-            local config_key=$1
-            local config_value=$2
-            # If key is found (starts with CONFIG_ or # CONFIG_), replace the line.
-            # Using '#' as a delimiter in sed to avoid conflicts with '/' in paths.
-            if grep -q -E "^(${config_key}|# ${config_key})" "$DEFCONFIG_PATH"; then
-              sed -i -E "s#^(${config_key}|# ${config_key}).*#${config_value}#" "$DEFCONFIG_PATH"
-            else
-              # If not found, append it to the file.
-              echo "${config_value}" >> "$DEFCONFIG_PATH"
-            fi
-          }
+          # Use awk for a more robust update. It avoids sed's quoting issues.
+          awk '
+            BEGIN {
+              # Define the configs we want to set
+              configs["CONFIG_CMDLINE"] = "CONFIG_CMDLINE=\"androidboot.selinux=permissive\""
+              configs["CONFIG_CMDLINE_EXTEND"] = "CONFIG_CMDLINE_EXTEND=y"
+              configs["CONFIG_SECURITY_SELINUX_DEVELOP"] = "CONFIG_SECURITY_SELINUX_DEVELOP=y"
+              configs["CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE"] = "# CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE is not set"
+              configs["CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE"] = "CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=y"
+              configs["CONFIG_SECURITY_DEFEX"] = "# CONFIG_SECURITY_DEFEX is not set"
+              configs["CONFIG_PROCA"] = "# CONFIG_PROCA is not set"
+              configs["CONFIG_INTEGRITY"] = "# CONFIG_INTEGRITY is not set"
+            }
+            {
+              # Split line at "=" to get the key
+              split($0, parts, "=")
+              key = parts[1]
+              
+              # Also handle commented out lines like "# CONFIG_... is not set"
+              if (substr(key, 1, 2) == "# ") {
+                split(key, cparts, " ")
+                key = cparts[2]
+              }
 
-          # Apply all required permissive settings
-          update_config "CONFIG_CMDLINE=" 'CONFIG_CMDLINE="androidboot.selinux=permissive"'
-          update_config "CONFIG_CMDLINE_EXTEND=" 'CONFIG_CMDLINE_EXTEND=y'
-          update_config "CONFIG_SECURITY_SELINUX_DEVELOP=" 'CONFIG_SECURITY_SELINUX_DEVELOP=y'
-          update_config "CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE=" '# CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE is not set'
-          update_config "CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=" 'CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=y'
-          update_config "CONFIG_SECURITY_DEFEX=" '# CONFIG_SECURITY_DEFEX is not set'
-          update_config "CONFIG_PROCA=" '# CONFIG_PROCA is not set'
-          update_config "CONFIG_INTEGRITY=" '# CONFIG_INTEGRITY is not set'
+              # If we have a replacement for this key, print it and mark it as handled
+              if (key in configs) {
+                print configs[key]
+                delete configs[key]
+              } else {
+                # Otherwise, print the original line
+                print $0
+              }
+            }
+            END {
+              # Add any configs that were not found in the file
+              for (key in configs) {
+                print configs[key]
+              }
+            }
+          ' "$DEFCONFIG_PATH" > "$TEMP_DEFCONFIG"
+
+          # Replace the original file with the modified one
+          mv "$TEMP_DEFCONFIG" "$DEFCONFIG_PATH"
 
           echo "--- Patches applied. Verifying final defconfig content: ---"
           cat $DEFCONFIG_PATH
@@ -86,7 +107,8 @@ jobs:
       - name: Build and Package
         id: build_chain
         run: |
-          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
+          PERMISSIVE_VERSION_TAG="${{ github.event.inputs.DEVELOPER_NAME }}-permissive"
+          sed -i "/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_defconfig --set-str LOCALVERSION \"-$PERMISSIVE_VERSION_TAG\"" build_kernel.sh
           ./build_kernel.sh
           ./scripts/repack
           FINAL_TAR=$(ls -t *.tar | head -n 1)
