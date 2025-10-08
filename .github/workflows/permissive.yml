@@ -59,6 +59,9 @@ jobs:
           apply_sed "CONFIG_GAF_V6=y" "# CONFIG_GAF_V6 is not set"
           apply_sed "CONFIG_SECURITY_DEFEX_USER=y" "# CONFIG_SECURITY_DEFEX_USER is not set"
           apply_sed "CONFIG_SECURITY_SELINUX_DEVELOP=y" "# CONFIG_SECURITY_SELINUX_DEVELOP is not set"
+          apply_sed "CONFIG_INTEGRITY=y" "# CONFIG_INTEGRITY is not set"
+          apply_sed "CONFIG_INTEGRITY_SIGNATURE=y" "# CONFIG_INTEGRITY_SIGNATURE is not set"
+          apply_sed "CONFIG_INTEGRITY_AUDIT=y" "# CONFIG_INTEGRITY_AUDIT is not set"
           
           echo "SUCCESS: Defconfig patching complete."
 
