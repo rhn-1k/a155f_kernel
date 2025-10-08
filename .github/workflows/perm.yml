@@ -1,4 +1,4 @@
-name: Build Permissive Kernel with KernelSU NEXT
+name: Build Permissive Kernel with KernelSU NEXT (Final, Simplified)
 
 on:
   workflow_dispatch:
@@ -24,17 +24,53 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply SELinux Permissive Patch (Both Files)
+      - name: Apply Final Developer Patches
         run: |
-          # 1. Patch hooks.c to force permissive on boot
-          # This replaces the entire enforcing definition block with a single line.
-          sed -i '/#ifdef CONFIG_SECURITY_SELINUX_DEVELOP/,/#endif/c\#define selinux_enforcing_boot 0' kernel-5.10/security/selinux/hooks.c
-          echo "SUCCESS: Patched kernel-5.10/security/selinux/hooks.c"
+          # --- Define THE ONLY Defconfig Path ---
+          DEFCONFIG_PATH="kernel-5.10/arch/arm64/configs/a15_defconfig"
 
-          # 2. Patch selinuxfs.c to prevent runtime changes to enforcing
-          # This replaces the entire sel_write_enforce function body.
+          # --- 1. Apply Defconfig Patches (Search and Replace ONLY) ---
+          echo "Patching $DEFCONFIG_PATH to disable Knox and security features..."
+          
+          # This function searches for a line and replaces it. If not found, it does nothing.
+          apply_sed() {
+            local pattern=$1
+            local replacement=$2
+            if grep -q "$pattern" "$DEFCONFIG_PATH"; then
+              sed -i "s/$pattern/$replacement/g" "$DEFCONFIG_PATH"
+              echo "SUCCESS: Disabled '$1' in $DEFCONFIG_PATH"
+            else
+              echo "INFO: '$1' not found in $DEFCONFIG_PATH. Skipping."
+            fi
+          }
+
+          # Disable all specified security configs
+          apply_sed "CONFIG_UH=y" "# CONFIG_UH is not set"
+          apply_sed "CONFIG_RKP=y" "# CONFIG_RKP is not set"
+          apply_sed "CONFIG_KDP=y" "# CONFIG_KDP is not set"
+          apply_sed "CONFIG_KDP_CRED=y" "# CONFIG_KDP_CRED is not set"
+          apply_sed "CONFIG_RKP_TEST=y" "# CONFIG_RKP_TEST is not set"
+          apply_sed "CONFIG_KDP_TEST=y" "# CONFIG_KDP_TEST is not set"
+          apply_sed "CONFIG_KNOX_NCM=y" "# CONFIG_KNOX_NCM is not set"
+          apply_sed "CONFIG_SECURITY_DEFEX=y" "# CONFIG_SECURITY_DEFEX is not set"
+          apply_sed "CONFIG_FIVE=y" "# CONFIG_FIVE is not set"
+          apply_sed "CONFIG_PROCA=y" "# CONFIG_PROCA is not set"
+          apply_sed "CONFIG_PROCA_S_OS=y" "# CONFIG_PROCA_S_OS is not set"
+          apply_sed "CONFIG_FIVE_GKI_10=y" "# CONFIG_FIVE_GKI_10 is not set"
+          apply_sed "CONFIG_FIVE_TEE_DRIVER=y" "# CONFIG_FIVE_TEE_DRIVER is not set"
+          apply_sed "CONFIG_FIVE_PA_FEATURE=y" "# CONFIG_FIVE_PA_FEATURE is not set"
+          apply_sed "CONFIG_GAF_V6=y" "# CONFIG_GAF_V6 is not set"
+          apply_sed "CONFIG_SECURITY_DEFEX_USER=y" "# CONFIG_SECURITY_DEFEX_USER is not set"
+          
+          echo "SUCCESS: Defconfig patching complete."
+
+          # --- 2. Apply Source Code Patches (from commit cafbb8c) ---
+          echo "Applying source code patches for permissive state..."
+          sed -i '/#ifdef CONFIG_SECURITY_SELINUX_DEVELOP/,/#endif/c\#define selinux_enforcing_boot 0' kernel-5.10/security/selinux/hooks.c
+          echo "SUCCESS: Patched hooks.c"
+          
           sed -i '/static ssize_t sel_write_enforce(struct file \*file, const char __user \*buf,/,/}/c\static ssize_t sel_write_enforce(struct file *file, const char __user *buf, size_t count, loff_t *ppos)\n{\n\treturn count;\n}' kernel-5.10/security/selinux/selinuxfs.c
-          echo "SUCCESS: Patched kernel-5.10/security/selinux/selinuxfs.c"
+          echo "SUCCESS: Patched selinuxfs.c"
 
       - name: Install Build Dependencies
         run: |
@@ -65,6 +101,7 @@ jobs:
       - name: Build and Package
         id: build_chain
         run: |
+          # This line is UNCHANGED and will use a15_00_defconfig as intended by the script.
           sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
           ./build_kernel.sh
           ./scripts/repack
