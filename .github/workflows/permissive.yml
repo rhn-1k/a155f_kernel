@@ -1,4 +1,4 @@
-name: Build Permissive Kernel with KernelSU NEXT (Final, Simplified)
+name: Build Permissive Kernel with KernelSU NEXT
 
 on:
   workflow_dispatch:
