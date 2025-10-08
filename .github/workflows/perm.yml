@@ -1,4 +1,4 @@
-name: Build A155F Kernel with KernelSU NEXT
+name: Build Permissive Kernel with KernelSU NEXT
 
 on:
   workflow_dispatch:
@@ -24,13 +24,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Apply SELinux Permissive Patch (Both Files)
+        run: |
+          # 1. Patch hooks.c to force permissive on boot
+          # This replaces the entire enforcing definition block with a single line.
+          sed -i '/#ifdef CONFIG_SECURITY_SELINUX_DEVELOP/,/#endif/c\#define selinux_enforcing_boot 0' kernel-5.10/security/selinux/hooks.c
+          echo "SUCCESS: Patched kernel-5.10/security/selinux/hooks.c"
+
+          # 2. Patch selinuxfs.c to prevent runtime changes to enforcing
+          # This replaces the entire sel_write_enforce function body.
+          sed -i '/static ssize_t sel_write_enforce(struct file \*file, const char __user \*buf,/,/}/c\static ssize_t sel_write_enforce(struct file *file, const char __user *buf, size_t count, loff_t *ppos)\n{\n\treturn count;\n}' kernel-5.10/security/selinux/selinuxfs.c
+          echo "SUCCESS: Patched kernel-5.10/security/selinux/selinuxfs.c"
+
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository ppa:deadsnakes/ppa -y
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4 patch
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4 patch
           sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
 
       - name: Download and Extract Toolchain
@@ -49,70 +61,11 @@ jobs:
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
-      
-      - name: Clean and Apply Patches to a15_defconfig
-        run: |
-          # First, run the clean script to ensure a fresh state
-          ./clean_build.sh
-          
-          # NOW, after cleaning, modify the correct defconfig file: a15_defconfig
-          DEFCONFIG_PATH="kernel-5.10/arch/arm64/configs/a15_defconfig"
-          TEMP_DEFCONFIG=$(mktemp)
-          PERMISSIVE_VERSION_TAG="${{ github.event.inputs.DEVELOPER_NAME }}-permissive"
-          
-          echo "Applying robust permissive patches to the correct file: $DEFCONFIG_PATH"
-
-          # Use awk to robustly modify a15_defconfig
-          awk -v version_tag="-$PERMISSIVE_VERSION_TAG" '
-            BEGIN {
-              # Define the configs we want to set
-              configs["CONFIG_CMDLINE"] = "CONFIG_CMDLINE=\"androidboot.selinux=permissive\""
-              configs["CONFIG_CMDLINE_EXTEND"] = "CONFIG_CMDLINE_EXTEND=y"
-              configs["CONFIG_SECURITY_SELINUX_DEVELOP"] = "CONFIG_SECURITY_SELINUX_DEVELOP=y"
-              configs["CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE"] = "# CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE is not set"
-              configs["CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE"] = "CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=y"
-              configs["CONFIG_LOCALVERSION"] = "CONFIG_LOCALVERSION=\"" version_tag "\""
-            }
-            {
-              # Split line at "=" to get the key
-              split($0, parts, "=")
-              key = parts[1]
-              
-              # Also handle commented out lines like "# CONFIG_... is not set"
-              if (substr(key, 1, 2) == "# ") {
-                split(key, cparts, " ")
-                key = cparts[2]
-              }
-
-              # If we have a replacement for this key, print it and mark it as handled
-              if (key in configs) {
-                print configs[key]
-                delete configs[key]
-              } else {
-                # Otherwise, print the original line
-                print $0
-              }
-            }
-            END {
-              # Add any configs that were not found in the file
-              for (key in configs) {
-                print configs[key]
-              }
-            }
-          ' "$DEFCONFIG_PATH" > "$TEMP_DEFCONFIG"
-
-          # Replace the original file with the modified one
-          mv "$TEMP_DEFCONFIG" "$DEFCONFIG_PATH"
-
-          echo "--- Patches applied. Verifying final a15_defconfig content: ---"
-          cat $DEFCONFIG_PATH
-          echo "----------------------------------------------------------"
 
       - name: Build and Package
         id: build_chain
         run: |
-          # The build script will now use the already-patched a15_defconfig
-          # We no longer need to modify build_kernel.sh
+          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
           ./build_kernel.sh
           ./scripts/repack
           FINAL_TAR=$(ls -t *.tar | head -n 1)
