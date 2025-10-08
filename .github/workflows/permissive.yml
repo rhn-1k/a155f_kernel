@@ -46,23 +46,16 @@ jobs:
 
           # Disable all specified security configs
           apply_sed "CONFIG_UH=y" "# CONFIG_UH is not set"
-          apply_sed "CONFIG_RKP=y" "# CONFIG_RKP is not set"
-          apply_sed "CONFIG_KDP=y" "# CONFIG_KDP is not set"
-          apply_sed "CONFIG_KDP_CRED=y" "# CONFIG_KDP_CRED is not set"
-          apply_sed "CONFIG_KDP_NS=y" "# CONFIG_KDP_NS is not set"
-          apply_sed "CONFIG_KNOX_NCM=y" "# CONFIG_KNOX_NCM is not set"
           apply_sed "CONFIG_SECURITY_DEFEX=y" "# CONFIG_SECURITY_DEFEX is not set"
           apply_sed "CONFIG_FIVE=y" "# CONFIG_FIVE is not set"
           apply_sed "CONFIG_PROCA=y" "# CONFIG_PROCA is not set"
           apply_sed "CONFIG_PROCA_S_OS=y" "# CONFIG_PROCA_S_OS is not set"
           apply_sed "CONFIG_FIVE_GKI_10=y" "# CONFIG_FIVE_GKI_10 is not set"
-          apply_sed "CONFIG_GAF_V6=y" "# CONFIG_GAF_V6 is not set"
-          apply_sed "CONFIG_SECURITY_DEFEX_USER=y" "# CONFIG_SECURITY_DEFEX_USER is not set"
-          apply_sed "CONFIG_SECURITY_SELINUX_DEVELOP=y" "# CONFIG_SECURITY_SELINUX_DEVELOP is not set"
+          apply_sed "CONFIG_SECURITY_DEFEX_USER=y" "# CONFIG_SECURITY_DEFEX_USER=n"
+          apply_sed "CONFIG_SECURITY_SELINUX_DEVELOP=y" "CONFIG_SECURITY_SELINUX_DEVELOP=n"
           apply_sed "CONFIG_INTEGRITY=y" "# CONFIG_INTEGRITY is not set"
-          apply_sed "CONFIG_INTEGRITY_SIGNATURE=y" "# CONFIG_INTEGRITY_SIGNATURE is not set"
-          apply_sed "CONFIG_INTEGRITY_AUDIT=y" "# CONFIG_INTEGRITY_AUDIT is not set"
-          
+          apply_sed "CONFIG_INTEGRITY_SIGNATURE=y" "CONFIG_INTEGRITY_SIGNATURE=n"
+          apply_sed "CONFIG_INTEGRITY_AUDIT=y" "CONFIG_INTEGRITY_AUDIT=n"
           echo "SUCCESS: Defconfig patching complete."
 
           # --- 2. Apply Source Code Patches (from commit cafbb8c) ---
