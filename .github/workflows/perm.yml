@@ -49,15 +49,21 @@ jobs:
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
-
-      - name: Apply Permissive Kernel Patches
+      
+      - name: Clean and Apply Patches to a15_defconfig
         run: |
+          # First, run the clean script to ensure a fresh state
+          ./clean_build.sh
+          
+          # NOW, after cleaning, modify the correct defconfig file: a15_defconfig
           DEFCONFIG_PATH="kernel-5.10/arch/arm64/configs/a15_defconfig"
           TEMP_DEFCONFIG=$(mktemp)
-          echo "Applying robust permissive patches to $DEFCONFIG_PATH"
+          PERMISSIVE_VERSION_TAG="${{ github.event.inputs.DEVELOPER_NAME }}-permissive"
+          
+          echo "Applying robust permissive patches to the correct file: $DEFCONFIG_PATH"
 
-          # Use awk for a more robust update. It avoids sed's quoting issues.
-          awk '
+          # Use awk to robustly modify a15_defconfig
+          awk -v version_tag="-$PERMISSIVE_VERSION_TAG" '
             BEGIN {
               # Define the configs we want to set
               configs["CONFIG_CMDLINE"] = "CONFIG_CMDLINE=\"androidboot.selinux=permissive\""
@@ -65,9 +71,7 @@ jobs:
               configs["CONFIG_SECURITY_SELINUX_DEVELOP"] = "CONFIG_SECURITY_SELINUX_DEVELOP=y"
               configs["CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE"] = "# CONFIG_SECURITY_SELINUX_ALWAYS_ENFORCE is not set"
               configs["CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE"] = "CONFIG_SECURITY_SELINUX_ALWAYS_PERMISSIVE=y"
-              configs["CONFIG_SECURITY_DEFEX"] = "# CONFIG_SECURITY_DEFEX is not set"
-              configs["CONFIG_PROCA"] = "# CONFIG_PROCA is not set"
-              configs["CONFIG_INTEGRITY"] = "# CONFIG_INTEGRITY is not set"
+              configs["CONFIG_LOCALVERSION"] = "CONFIG_LOCALVERSION=\"" version_tag "\""
             }
             {
               # Split line at "=" to get the key
@@ -100,15 +104,15 @@ jobs:
           # Replace the original file with the modified one
           mv "$TEMP_DEFCONFIG" "$DEFCONFIG_PATH"
 
-          echo "--- Patches applied. Verifying final defconfig content: ---"
+          echo "--- Patches applied. Verifying final a15_defconfig content: ---"
           cat $DEFCONFIG_PATH
           echo "----------------------------------------------------------"
 
       - name: Build and Package
         id: build_chain
         run: |
-          PERMISSIVE_VERSION_TAG="${{ github.event.inputs.DEVELOPER_NAME }}-permissive"
-          sed -i "/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_defconfig --set-str LOCALVERSION \"-$PERMISSIVE_VERSION_TAG\"" build_kernel.sh
+          # The build script will now use the already-patched a15_defconfig
+          # We no longer need to modify build_kernel.sh
           ./build_kernel.sh
           ./scripts/repack
           FINAL_TAR=$(ls -t *.tar | head -n 1)
