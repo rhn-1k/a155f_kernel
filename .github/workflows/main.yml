@@ -3,14 +3,6 @@ name: Build A155F Kernel with KernelSU NEXT
 on:
   workflow_dispatch:
     inputs:
-      BUILD_TYPE:
-        description: 'Select the kernel build type'
-        required: true
-        default: 'Enforcing'
-        type: choice
-        options:
-          - Enforcing
-          - Permissive
       TOOLCHAIN_URL:
         description: 'URL of the toolchain .tar.gz file'
         required: true
@@ -51,7 +43,6 @@ jobs:
       - name: Set Scripts Executable
         run: |
           chmod +x build_kernel.sh
-          chmod +x build_kernel_permissive.sh
           chmod +x clean_build.sh
           chmod +x scripts/config
           chmod +x scripts/repack
@@ -62,21 +53,9 @@ jobs:
       - name: Build and Package
         id: build_chain
         run: |
-          if [ "${{ github.event.inputs.BUILD_TYPE }}" == "Permissive" ]; then
-            BUILD_SCRIPT="./build_kernel_permissive.sh"
-          else
-            BUILD_SCRIPT="./build_kernel.sh"
-          fi
-          
-          echo "Using build script: $BUILD_SCRIPT"
-          
-          VERSION_SUFFIX="-${{ github.event.inputs.DEVELOPER_NAME }}"
-          sed -i "/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION \"$VERSION_SUFFIX\"" $BUILD_SCRIPT
-          
-          $BUILD_SCRIPT
-          
+          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
+          ./build_kernel.sh
           ./scripts/repack
-          
           FINAL_TAR=$(ls -t *.tar | head -n 1)
           if [ -z "$FINAL_TAR" ]; then
             echo "::error::Final .tar file not found!"
