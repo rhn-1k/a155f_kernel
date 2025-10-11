@@ -34,16 +34,16 @@ print_msg "$RED" "       by poqdavid \n"
 
 ./clean_build.sh
 
-print_msg "$GREEN" "Modifying configs..."
+# =====================================================================
+# APPLY PERMISSIVE SOURCE PATCH (mst8981 method)
+# =====================================================================
+print_msg "$GREEN" "Applying permissive source patches..."
+sed -i 's/#define selinux_enforcing_boot 1/#define selinux_enforcing_boot 0/' kernel-5.10/security/selinux/hooks.c
+sed -i 's/return length;/return count;/' kernel-5.10/security/selinux/selinuxfs.c
+print_msg "$GREEN" "Source patches applied. SELinux is now permissive by source."
 
-./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig \
---set-val SECURITY_SELINUX_DEVELOP y \
---set-val SECURITY_SELINUX_ALWAYS_PERMISSIVE y \
---set-val SECURITY_SELINUX_ALWAYS_ENFORCE n \
---set-val MODULE_FORCE_LOAD y \
---set-val MODULE_UNLOAD y \
---set-val MODULE_FORCE_UNLOAD y \
---append-str CMDLINE " androidboot.selinux=permissive"
+
+print_msg "$GREEN" "Modifying configs..."
 
 # Samsung related configs like Kernel Protection
 ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig \
