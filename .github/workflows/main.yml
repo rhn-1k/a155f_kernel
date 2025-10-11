@@ -64,14 +64,13 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.BUILD_TYPE }}" == "Permissive" ]; then
             BUILD_SCRIPT="./build_kernel_permissive.sh"
-            VERSION_SUFFIX="-${{ github.event.inputs.DEVELOPER_NAME }}-Permissive"
           else
             BUILD_SCRIPT="./build_kernel.sh"
-            VERSION_SUFFIX="-${{ github.event.inputs.DEVELOPER_NAME }}"
           fi
           
           echo "Using build script: $BUILD_SCRIPT"
           
+          VERSION_SUFFIX="-${{ github.event.inputs.DEVELOPER_NAME }}"
           sed -i "/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION \"$VERSION_SUFFIX\"" $BUILD_SCRIPT
           
           $BUILD_SCRIPT
