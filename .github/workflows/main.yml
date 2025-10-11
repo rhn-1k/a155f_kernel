@@ -48,9 +48,10 @@ jobs:
           tar -xf "$FILE_NAME"
           rm "$FILE_NAME"
 
-      - name: Set Initial Scripts Executable
+      - name: Set Scripts Executable
         run: |
-          # We only set permissions for scripts that are not modified later
+          chmod +x build_kernel.sh
+          chmod +x build_kernel_permissive.sh
           chmod +x clean_build.sh
           chmod +x scripts/config
           chmod +x scripts/repack
@@ -58,45 +59,25 @@ jobs:
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
 
-      - name: Prepare Permissive Build (if selected)
-        if: github.event.inputs.BUILD_TYPE == 'Permissive'
-        run: |
-          PERMISSIVE_SETTINGS='\
-          --set-val SECURITY_SELINUX_DEVELOP y \\\
-          --set-val SECURITY_SELINUX_ALWAYS_PERMISSIVE y \\\
-          --set-val SECURITY_SELINUX_ALWAYS_ENFORCE n \\\
-          --set-val MODULE_FORCE_LOAD y \\\
-          --set-val MODULE_UNLOAD y \\\
-          --set-val MODULE_FORCE_UNLOAD y \\\
-          --append-str CMDLINE " androidboot.selinux=permissive" \\'
-          
-          awk -v settings_to_add="$PERMISSIVE_SETTINGS" '
-          1;
-          /.\/kernel-5.10\/scripts\/config --file/ {
-            print settings_to_add
-          }
-          ' build_kernel.sh > build_kernel.sh.tmp && mv build_kernel.sh.tmp build_kernel.sh
-          
-          echo "--- Verification: build_kernel.sh has been fully modified ---"
-          grep -A 10 "Samsung related configs" build_kernel.sh
-          echo "------------------------------------------------------------"
-
       - name: Build and Package
         id: build_chain
         run: |
-          # Set executable permission for build_kernel.sh AFTER all modifications
-          chmod +x build_kernel.sh
-
-          # Add developer name to kernel version
-          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
+          if [ "${{ github.event.inputs.BUILD_TYPE }}" == "Permissive" ]; then
+            BUILD_SCRIPT="./build_kernel_permissive.sh"
+            VERSION_SUFFIX="-${{ github.event.inputs.DEVELOPER_NAME }}-Permissive"
+          else
+            BUILD_SCRIPT="./build_kernel.sh"
+            VERSION_SUFFIX="-${{ github.event.inputs.DEVELOPER_NAME }}"
+          fi
           
-          # Run the build
-          ./build_kernel.sh
+          echo "Using build script: $BUILD_SCRIPT"
           
-          # Repack the kernel
+          sed -i "/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION \"$VERSION_SUFFIX\"" $BUILD_SCRIPT
+          
+          $BUILD_SCRIPT
+          
           ./scripts/repack
           
-          # Find the final tarball
           FINAL_TAR=$(ls -t *.tar | head -n 1)
           if [ -z "$FINAL_TAR" ]; then
             echo "::error::Final .tar file not found!"
