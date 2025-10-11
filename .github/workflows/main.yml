@@ -3,6 +3,14 @@ name: Build A155F Kernel with KernelSU NEXT
 on:
   workflow_dispatch:
     inputs:
+      BUILD_TYPE:
+        description: 'Select the kernel build type'
+        required: true
+        default: 'Enforcing'
+        type: choice
+        options:
+          - Enforcing
+          - Permissive
       TOOLCHAIN_URL:
         description: 'URL of the toolchain .tar.gz file'
         required: true
@@ -49,6 +57,29 @@ jobs:
           chmod +x scripts/bin/magiskboot
           chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
           chmod +x scripts/bin/avb/avbtool.py
+
+      - name: Prepare Permissive Build (if selected)
+        if: github.event.inputs.BUILD_TYPE == 'Permissive'
+        run: |
+          PERMISSIVE_SETTINGS='\
+          --set-val SECURITY_SELINUX_DEVELOP y \\\
+          --set-val SECURITY_SELINUX_ALWAYS_PERMISSIVE y \\\
+          --set-val SECURITY_SELINUX_ALWAYS_ENFORCE n \\\
+          --set-val MODULE_FORCE_LOAD y \\\
+          --set-val MODULE_UNLOAD y \\\
+          --set-val MODULE_FORCE_UNLOAD y \\\
+          --append-str CMDLINE " androidboot.selinux=permissive" \\'
+          
+          awk -v settings_to_add="$PERMISSIVE_SETTINGS" '
+          1;
+          /.\/kernel-5.10\/scripts\/config --file/ {
+            print settings_to_add
+          }
+          ' build_kernel.sh > build_kernel.sh.tmp && mv build_kernel.sh.tmp build_kernel.sh
+          
+          echo "--- Verification: build_kernel.sh has been fully modified ---"
+          grep -A 10 "Samsung related configs" build_kernel.sh
+          echo "------------------------------------------------------------"
 
       - name: Build and Package
         id: build_chain
