@@ -8,11 +8,6 @@ on:
         required: true
         default: 'https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz'
         type: string
-      DEVELOPER_NAME:
-        description: 'Your name for the kernel version (e.g., rhn-1k)'
-        required: true
-        default: 'rhn-1k'
-        type: string
 
 jobs:
   build:
@@ -53,7 +48,6 @@ jobs:
       - name: Build and Package
         id: build_chain
         run: |
-          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
           ./build_kernel.sh
           ./scripts/repack
           FINAL_TAR=$(ls -t *.tar | head -n 1)
