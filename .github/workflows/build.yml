@@ -1,0 +1,79 @@
+name: Build A155F Kernel with KernelSU NEXT
+
+on:
+  workflow_dispatch:
+    inputs:
+      TOOLCHAIN_URL:
+        description: 'URL of the toolchain .tar.gz file'
+        required: true
+        default: 'https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz'
+        type: string
+      DEVELOPER_NAME:
+        description: 'Your name for the kernel version (e.g., rhn-1k)'
+        required: true
+        default: 'rhn-1k'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository ppa:deadsnakes/ppa -y
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4 patch
+          sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
+
+      - name: Download and Extract Toolchain
+        run: |
+          curl -LO "${{ github.event.inputs.TOOLCHAIN_URL }}"
+          FILE_NAME=$(basename "${{ github.event.inputs.TOOLCHAIN_URL }}")
+          tar -xf "$FILE_NAME"
+          rm "$FILE_NAME"
+
+      - name: Set Scripts Executable
+        run: |
+          chmod +x build_kernel.sh
+          chmod +x clean_build.sh
+          chmod +x scripts/config
+          chmod +x scripts/repack
+          chmod +x scripts/bin/magiskboot
+          chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
+          chmod +x scripts/bin/avb/avbtool.py
+
+      - name: Build and Package
+        id: build_chain
+        run: |
+          sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-${{ github.event.inputs.DEVELOPER_NAME }}"' build_kernel.sh
+          ./build_kernel.sh
+          ./scripts/repack
+          FINAL_TAR=$(ls -t *.tar | head -n 1)
+          if [ -z "$FINAL_TAR" ]; then
+            echo "::error::Final .tar file not found!"
+            ls -R
+            exit 1
+          fi
+          echo "final_tar_name=$FINAL_TAR" >> $GITHUB_OUTPUT
+
+      - name: Upload Final Tarball to Gofile
+        run: |
+          FILE_PATH="${{ steps.build_chain.outputs.final_tar_name }}"
+          RESPONSE=$(curl -F "file=@${FILE_PATH}" \
+                          -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" \
+                          https://upload.gofile.io/uploadFile)
+          DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
+          if [ -z "$DOWNLOAD_PAGE" ]; then
+            echo "Error: Could not extract download page URL from Gofile response."
+            exit 1
+          fi
+          echo "File uploaded successfully!"
+          echo "Download Link: $DOWNLOAD_PAGE"
