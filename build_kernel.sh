@@ -111,13 +111,9 @@ print_msg "$GREEN" "Modifying configs..."
 cd kernel-5.10
 
 print_msg "$GREEN" "Modified configs ..."
-
 print_msg "$GREEN" "Configuring Kernel metadata..."
-sed -i '$s|echo "\$res"|echo "-android12-9-31117096"|' ./scripts/setlocalversion
 perl -pi -e 's{UTS_VERSION="\$\(echo \$UTS_VERSION \$CONFIG_FLAGS \$TIMESTAMP \| cut -b -\$UTS_LEN\)"}{UTS_VERSION="#1 SMP PREEMPT Thu Jul 31 08:40:06 UTC 2025"}' ./scripts/mkcompile_h
-sed -i 's/-dirty//' ./scripts/setlocalversion
 print_msg "$GREEN" "Finished Configuring Kernel metadata..."
-
 print_msg "$GREEN" "Generating configs..."
 
 python2 scripts/gen_build_config.py --kernel-defconfig a15_00_defconfig --kernel-defconfig-overlays entry_level.config -m user -o ../out/target/product/a15/obj/KERNEL_OBJ/build.config
