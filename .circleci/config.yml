@@ -1,5 +1,15 @@
 version: 2.1
 
+parameters:
+  toolchain_url:
+    type: string
+    default: "https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz"
+    description: "URL of the toolchain .tar.gz file"
+  developer_name:
+    type: string
+    default: "rhn-1k"
+    description: "Your name for the kernel version (e.g., rhn-1k)"
+
 jobs:
   build:
     docker:
@@ -18,9 +28,9 @@ jobs:
       - run:
           name: Download and Extract Toolchain
           command: |
-            curl -LO "https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz"
-            tar -xf toolchain.tar.gz
-            rm toolchain.tar.gz
+            curl -LO "<< pipeline.parameters.toolchain_url >>"
+            tar -xf $(basename "<< pipeline.parameters.toolchain_url >>")
+            rm $(basename "<< pipeline.parameters.toolchain_url >>")
       - run:
           name: Set Scripts Executable
           command: |
@@ -34,7 +44,7 @@ jobs:
       - run:
           name: Build and Upload
           command: |
-            sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-rhn-1k"' build_kernel.sh
+            sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-<< pipeline.parameters.developer_name >>"' build_kernel.sh
             ./build_kernel.sh
             ./scripts/repack
             FINAL_TAR=$(ls -t *.tar | head -n 1)
@@ -54,7 +64,9 @@ jobs:
             echo "Download Link: $DOWNLOAD_PAGE"
 
 workflows:
-  version: 2
-  build-my-kernel:
+  manual-build:
+    when:
+      not:
+        equal: [ "main", << pipeline.git.branch >> ]
     jobs:
       - build
