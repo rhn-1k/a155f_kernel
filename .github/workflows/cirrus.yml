@@ -1,0 +1,54 @@
+task:
+  name: Build Kernel from GitHub Workflow
+  container:
+    image: ubuntu:22.04
+  trigger_type: manual
+  manual_trigger_inputs:
+    - name: TOOLCHAIN_URL
+      description: 'URL of the toolchain .tar.gz file'
+      required: true
+      default: 'https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz'
+    - name: DEVELOPER_NAME
+      description: 'Your name for the kernel version (e.g., rhn-1k)'
+      required: true
+      default: 'rhn-1k'
+  build_script:
+    - export DEBIAN_FRONTEND=noninteractive
+    - apt-get update
+    - apt-get install -y software-properties-common
+    - add-apt-repository ppa:deadsnakes/ppa -y
+    - apt-get update
+    - apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4 patch
+    - ln -sf /usr/bin/python2.7 /usr/bin/python2
+    - curl -LO "$TOOLCHAIN_URL"
+    - FILE_NAME=$(basename "$TOOLCHAIN_URL")
+    - tar -xf "$FILE_NAME"
+    - rm "$FILE_NAME"
+    - chmod +x build_kernel.sh
+    - chmod +x clean_build.sh
+    - chmod +x scripts/config
+    - chmod +x scripts/repack
+    - chmod +x scripts/bin/magiskboot
+    - chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
+    - chmod +x scripts/bin/avb/avbtool.py
+    - sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-'$DEVELOPER_NAME'"' build_kernel.sh
+    - ./build_kernel.sh
+    - ./scripts/repack
+    - FINAL_TAR=$(ls -t *.tar | head -n 1)
+    - |
+      if [ -z "$FINAL_TAR" ]; then
+        echo "::error::Final .tar file not found!"
+        ls -R
+        exit 1
+      fi
+    - |
+      RESPONSE=$(curl -F "file=@${FINAL_TAR}" \
+                      -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" \
+                      https://upload.gofile.io/uploadFile)
+      DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
+      if [ -z "$DOWNLOAD_PAGE" ]; then
+        echo "Error: Could not extract download page URL from Gofile response."
+        exit 1
+      fi
+      echo "File uploaded successfully!"
+      echo "Download Link: $DOWNLOAD_PAGE"
