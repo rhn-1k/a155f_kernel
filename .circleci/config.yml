@@ -1,0 +1,60 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/base:2022.04
+    steps:
+      - checkout
+      - run:
+          name: Install Build Dependencies
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y software-properties-common
+            sudo add-apt-repository ppa:deadsnakes/ppa -y
+            sudo apt-get update
+            sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3 python2.7 openssl lz4 patch
+            sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
+      - run:
+          name: Download and Extract Toolchain
+          command: |
+            curl -LO "https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz"
+            tar -xf toolchain.tar.gz
+            rm toolchain.tar.gz
+      - run:
+          name: Set Scripts Executable
+          command: |
+            chmod +x build_kernel.sh
+            chmod +x clean_build.sh
+            chmod +x scripts/config
+            chmod +x scripts/repack
+            chmod +x scripts/bin/magiskboot
+            chmod +x scripts/bin/ksud-x86_64-unknown-linux-musl
+            chmod +x scripts/bin/avb/avbtool.py
+      - run:
+          name: Build and Upload
+          command: |
+            sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-rhn-1k"' build_kernel.sh
+            ./build_kernel.sh
+            ./scripts/repack
+            FINAL_TAR=$(ls -t *.tar | head -n 1)
+            if [ -z "$FINAL_TAR" ]; then
+              echo "Final .tar file not found!"
+              exit 1
+            fi
+            RESPONSE=$(curl -F "file=@${FINAL_TAR}" \
+                            -H "Authorization: Bearer E29ro0ueg1dXX7CHmJSdrO9puOTUMREk" \
+                            https://upload.gofile.io/uploadFile)
+            DOWNLOAD_PAGE=$(echo $RESPONSE | grep -o '"downloadPage": *"[^"]*"' | cut -d '"' -f 4)
+            if [ -z "$DOWNLOAD_PAGE" ]; then
+              echo "Error: Could not extract download page URL."
+              exit 1
+            fi
+            echo "File uploaded successfully!"
+            echo "Download Link: $DOWNLOAD_PAGE"
+
+workflows:
+  version: 2
+  build-my-kernel:
+    jobs:
+      - build
