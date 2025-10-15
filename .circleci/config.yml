@@ -1,12 +1,6 @@
 version: 2.1
 
 jobs:
-  approve-build:
-    docker:
-      - image: cimg/base:2022.04
-    steps:
-      - run: echo "Waiting for manual approval to start the build..."
-
   build-kernel:
     docker:
       - image: cimg/base:2022.04
@@ -63,9 +57,10 @@ jobs:
             echo "Download Link: $DOWNLOAD_PAGE"
 
 workflows:
-  manual-approval-workflow:
+  build-with-approval:
     jobs:
-      - approve-build
+      - hold-for-approval:
+          type: approval
       - build-kernel:
           requires:
-            - approve-build
+            - hold-for-approval
