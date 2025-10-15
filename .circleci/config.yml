@@ -1,19 +1,18 @@
 version: 2.1
 
-parameters:
-  toolchain_url:
-    type: string
-    default: "https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz"
-    description: "URL of the toolchain .tar.gz file"
-  developer_name:
-    type: string
-    default: "rhn-1k"
-    description: "Your name for the kernel version (e.g., rhn-1k)"
-
 jobs:
-  build:
+  approve-build:
     docker:
       - image: cimg/base:2022.04
+    steps:
+      - run: echo "Waiting for manual approval to start the build..."
+
+  build-kernel:
+    docker:
+      - image: cimg/base:2022.04
+    environment:
+      DEVELOPER_NAME: "rhn-1k"
+      TOOLCHAIN_URL: "https://github.com/ravindu644/android_kernel_a165f/releases/download/toolchain/toolchain.tar.gz"
     steps:
       - checkout
       - run:
@@ -28,9 +27,9 @@ jobs:
       - run:
           name: Download and Extract Toolchain
           command: |
-            curl -LO "<< pipeline.parameters.toolchain_url >>"
-            tar -xf $(basename "<< pipeline.parameters.toolchain_url >>")
-            rm $(basename "<< pipeline.parameters.toolchain_url >>")
+            curl -LO "$TOOLCHAIN_URL"
+            tar -xf $(basename "$TOOLCHAIN_URL")
+            rm $(basename "$TOOLCHAIN_URL")
       - run:
           name: Set Scripts Executable
           command: |
@@ -44,7 +43,7 @@ jobs:
       - run:
           name: Build and Upload
           command: |
-            sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-<< pipeline.parameters.developer_name >>"' build_kernel.sh
+            sed -i '/# KernelSU Next configs/i ./kernel-5.10/scripts/config --file kernel-5.10/arch/arm64/configs/a15_00_defconfig --set-str LOCALVERSION "-$DEVELOPER_NAME"' build_kernel.sh
             ./build_kernel.sh
             ./scripts/repack
             FINAL_TAR=$(ls -t *.tar | head -n 1)
@@ -64,9 +63,9 @@ jobs:
             echo "Download Link: $DOWNLOAD_PAGE"
 
 workflows:
-  manual-workflow:
-    when:
-      and:
-        - equal: [ manual, << pipeline.trigger_source >> ]
+  manual-approval-workflow:
     jobs:
-      - build
+      - approve-build
+      - build-kernel:
+          requires:
+            - approve-build
